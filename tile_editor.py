@@ -1274,7 +1274,7 @@ class TileEditor:
         
         # Property editor is centered in palette
         editor_x = self.palette_rect.x + 20
-        editor_y = 150
+        editor_y = self.palette_rect.y + 150
         editor_width = self.palette_width - 40
         
         # Close button
@@ -2511,7 +2511,7 @@ class TileEditor:
             return
 
         editor_x = self.palette_rect.x + 20
-        editor_y = 100
+        editor_y = self.palette_rect.y + 100
         editor_width = self.palette_width - 40
 
         # Close button
@@ -2620,7 +2620,7 @@ class TileEditor:
             return
 
         editor_x = self.palette_rect.x + 20
-        editor_y = 100
+        editor_y = self.palette_rect.y + 100
         editor_width = self.palette_width - 40
 
         # Close button
