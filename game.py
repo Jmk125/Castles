@@ -102,13 +102,50 @@ class Player:
         self.jump_strength = 10
         self.health = 100
         self.max_health = 100
-        
+
+        # Attack
+        self.attacking = False
+        self.attack_timer = 0
+        self.attack_duration = 10  # frames
+        self.attack_cooldown = 20  # frames
+        self.attack_cooldown_timer = 0
+        self.attack_damage = 25
+        self.attack_range = 35
+
         # Animation
         self.facing_right = True
         
     def get_rect(self) -> pygame.Rect:
         return pygame.Rect(int(self.x), int(self.y), self.width, self.height)
-    
+
+    def get_attack_rect(self) -> pygame.Rect:
+        """Get the hitbox for the sword swing"""
+        if not self.attacking:
+            return pygame.Rect(0, 0, 0, 0)
+
+        if self.facing_right:
+            # Attack in front of player
+            return pygame.Rect(
+                int(self.x + self.width),
+                int(self.y),
+                self.attack_range,
+                self.height
+            )
+        else:
+            # Attack to the left
+            return pygame.Rect(
+                int(self.x - self.attack_range),
+                int(self.y),
+                self.attack_range,
+                self.height
+            )
+
+    def start_attack(self):
+        """Start an attack if not on cooldown"""
+        if self.attack_cooldown_timer <= 0 and not self.attacking:
+            self.attacking = True
+            self.attack_timer = self.attack_duration
+
     def update(self, keys, level):
         """Update player physics and movement"""
         # Horizontal movement
@@ -134,8 +171,8 @@ class Player:
                 if self.climbing:
                     self.vel_y = 0
         
-        # Jumping
-        if (keys[pygame.K_SPACE] or keys[pygame.K_UP] or keys[pygame.K_w]) and self.on_ground and not self.on_ladder:
+        # Jumping (removed spacebar - now used for attack)
+        if (keys[pygame.K_UP] or keys[pygame.K_w]) and self.on_ground and not self.on_ladder:
             self.vel_y = -self.jump_strength
             self.on_ground = False
         
@@ -158,7 +195,17 @@ class Player:
 
         # Check for hazards
         self.check_hazards(level)
-        
+
+        # Update attack timers
+        if self.attacking:
+            self.attack_timer -= 1
+            if self.attack_timer <= 0:
+                self.attacking = False
+                self.attack_cooldown_timer = self.attack_cooldown
+
+        if self.attack_cooldown_timer > 0:
+            self.attack_cooldown_timer -= 1
+
     def handle_horizontal_collisions(self, level):
         """Handle collisions in the X direction"""
         player_rect = self.get_rect()
@@ -245,7 +292,7 @@ class Player:
         """Draw the player"""
         draw_x = int(self.x - camera_x)
         draw_y = int(self.y - camera_y)
-        
+
         # Draw simple rectangle for now (can be replaced with sprite later)
         pygame.draw.rect(screen, RED, (draw_x, draw_y, self.width, self.height))
 
@@ -254,6 +301,22 @@ class Player:
             pygame.draw.rect(screen, WHITE, (draw_x + self.width - 3, draw_y + 5, 3, 3))
         else:
             pygame.draw.rect(screen, WHITE, (draw_x, draw_y + 5, 3, 3))
+
+        # Draw sword swing if attacking
+        if self.attacking:
+            attack_rect = self.get_attack_rect()
+            sword_draw_x = int(attack_rect.x - camera_x)
+            sword_draw_y = int(attack_rect.y - camera_y)
+
+            # Draw sword as a semi-transparent yellow rectangle
+            sword_surface = pygame.Surface((attack_rect.width, attack_rect.height))
+            sword_surface.set_alpha(150)
+            sword_surface.fill((255, 255, 100))  # Yellow
+            screen.blit(sword_surface, (sword_draw_x, sword_draw_y))
+
+            # Draw sword outline
+            pygame.draw.rect(screen, (255, 255, 0),
+                           (sword_draw_x, sword_draw_y, attack_rect.width, attack_rect.height), 2)
 
 class Enemy:
     def __init__(self, x: int, y: int, enemy_type: EnemyType, patrol_range: int = 100):
@@ -721,6 +784,32 @@ class Game:
                     # Could implement powerups later
                     pass
 
+    def check_player_attack_collisions(self):
+        """Check if player's attack hits any enemies"""
+        if not self.player.attacking:
+            return
+
+        attack_rect = self.player.get_attack_rect()
+
+        for enemy in self.level.enemies:
+            if not enemy.alive:
+                continue
+
+            enemy_rect = enemy.get_rect()
+            if attack_rect.colliderect(enemy_rect):
+                # Apply damage to enemy
+                enemy.take_damage(self.player.attack_damage)
+
+                # Knockback enemy
+                if self.player.facing_right:
+                    enemy.x += 15  # Push right
+                else:
+                    enemy.x -= 15  # Push left
+
+                # Stop checking after hitting one enemy (sword can only hit one at a time)
+                # Remove this break if you want the sword to hit multiple enemies
+                break
+
     def check_end_level_collision(self):
         """Check if player touches END_LEVEL tile when requirements are met"""
         # Only check if all required collectibles are collected
@@ -852,6 +941,10 @@ class Game:
                     self.restart_level()
                 elif event.key == pygame.K_n:
                     self.next_level()
+                elif event.key == pygame.K_SPACE:
+                    # Attack with spacebar
+                    if not self.game_over:
+                        self.player.start_attack()
     
     def run(self):
         """Main game loop"""
@@ -872,6 +965,7 @@ class Game:
                 # Check collisions
                 self.check_enemy_collisions()
                 self.check_collectible_collisions()
+                self.check_player_attack_collisions()
 
                 # Check if player is dead
                 self.check_player_death()
