@@ -318,8 +318,9 @@ class TileEditor:
         self.viewport_drag_start = None
         self.viewport_resize_start = None
 
-        # Auto-load last saved level
-        self._load_last_level()
+        # Top bar buttons
+        self.open_button_rect = None
+        self.save_as_button_rect = None
         
     def _create_placeholder_tiles(self):
         """Create starter placeholder tiles"""
@@ -365,29 +366,6 @@ class TileEditor:
 
         # Power Up
         self.add_collectible_type("Power Up", None, CollectibleEffect.POWERUP.value, 1, PURPLE)
-
-    def _load_last_level(self):
-        """Load the last saved level if config exists"""
-        config_file = ".last_level.json"
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-                    last_file = config.get('last_file')
-                    if last_file and os.path.exists(last_file):
-                        print(f"Auto-loading last level: {last_file}")
-                        self.load_level(last_file)
-            except Exception as e:
-                print(f"Failed to load last level: {e}")
-
-    def _save_last_level_config(self, filename: str):
-        """Save the last level filename to config"""
-        config_file = ".last_level.json"
-        try:
-            with open(config_file, 'w') as f:
-                json.dump({'last_file': filename}, f)
-        except Exception as e:
-            print(f"Failed to save config: {e}")
 
     def add_tile_type(self, name: str, image_path: Optional[str], properties: List[str], color: Tuple[int, int, int]):
         """Add a new tile type"""
@@ -627,10 +605,9 @@ class TileEditor:
                         self.input_text += event.unicode
                 # Normal hotkeys
                 elif event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
-                    filename = self.get_next_level_filename()
-                    self.save_level(filename)
+                    self.save_level_as_dialog()
                 elif event.key == pygame.K_o and pygame.key.get_mods() & pygame.KMOD_CTRL:
-                    self.load_level("level.json")
+                    self.open_level_dialog()
                 elif event.key == pygame.K_ESCAPE:
                     self.show_property_editor = False
                     self.input_active = False
@@ -741,6 +718,15 @@ class TileEditor:
     
     def handle_left_click(self, pos):
         """Handle left mouse click"""
+        # Check if clicking on top bar buttons
+        if self.open_button_rect and self.open_button_rect.collidepoint(pos):
+            self.open_level_dialog()
+            return
+
+        if self.save_as_button_rect and self.save_as_button_rect.collidepoint(pos):
+            self.save_level_as_dialog()
+            return
+
         # Check if clicking on viewport controls (in canvas area)
         # Skip viewport controls when on BACKGROUND tab to allow background image dragging
         if self.current_tab != EditorTab.BACKGROUND and self.canvas_rect.collidepoint(pos):
@@ -2688,6 +2674,41 @@ class TileEditor:
             collectible_type.required = not collectible_type.required
             return
 
+    def open_level_dialog(self):
+        """Open a file dialog to load a level"""
+        root = tk.Tk()
+        root.withdraw()  # Hide the main window
+        root.attributes('-topmost', True)  # Keep dialog on top
+
+        filename = filedialog.askopenfilename(
+            title="Open Level",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            defaultextension=".json"
+        )
+
+        root.destroy()
+
+        if filename:
+            self.load_level(filename)
+
+    def save_level_as_dialog(self):
+        """Open a file dialog to save the level"""
+        root = tk.Tk()
+        root.withdraw()  # Hide the main window
+        root.attributes('-topmost', True)  # Keep dialog on top
+
+        filename = filedialog.asksaveasfilename(
+            title="Save Level As",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            defaultextension=".json",
+            initialfile=self.get_next_level_filename()
+        )
+
+        root.destroy()
+
+        if filename:
+            self.save_level(filename)
+
     def get_next_level_filename(self) -> str:
         """Get the next available level filename (level1.json, level2.json, etc.)"""
         level_num = 1
@@ -2728,9 +2749,6 @@ class TileEditor:
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
         print(f"Level saved to {filename}")
-
-        # Save this as the last level
-        self._save_last_level_config(filename)
     
     def load_level(self, filename: str):
         """Load a level from JSON"""
@@ -2921,16 +2939,50 @@ class TileEditor:
             self.viewport_height = VIEWPORT_HEIGHT
 
         print(f"Level loaded from {filename}")
-    
+
+    def draw_top_bar(self):
+        """Draw the top bar with Open and Save As buttons"""
+        bar_height = 40
+        bar_rect = pygame.Rect(0, 0, SCREEN_WIDTH, bar_height)
+        pygame.draw.rect(self.screen, (60, 60, 60), bar_rect)
+        pygame.draw.line(self.screen, BLACK, (0, bar_height), (SCREEN_WIDTH, bar_height), 2)
+
+        # Open button
+        button_width = 100
+        button_height = 28
+        button_margin = 10
+
+        self.open_button_rect = pygame.Rect(button_margin, (bar_height - button_height) // 2, button_width, button_height)
+        pygame.draw.rect(self.screen, GREEN, self.open_button_rect)
+        pygame.draw.rect(self.screen, BLACK, self.open_button_rect, 2)
+        open_text = self.font.render("Open", True, BLACK)
+        text_rect = open_text.get_rect(center=self.open_button_rect.center)
+        self.screen.blit(open_text, text_rect)
+
+        # Save As button
+        self.save_as_button_rect = pygame.Rect(button_margin + button_width + button_margin,
+                                                 (bar_height - button_height) // 2,
+                                                 button_width, button_height)
+        pygame.draw.rect(self.screen, BLUE, self.save_as_button_rect)
+        pygame.draw.rect(self.screen, BLACK, self.save_as_button_rect, 2)
+        save_text = self.font.render("Save As", True, BLACK)
+        text_rect = save_text.get_rect(center=self.save_as_button_rect.center)
+        self.screen.blit(save_text, text_rect)
+
+        # Adjust canvas and palette rects to account for top bar
+        self.canvas_rect = pygame.Rect(0, bar_height, SCREEN_WIDTH - self.palette_width, SCREEN_HEIGHT - bar_height)
+        self.palette_rect = pygame.Rect(SCREEN_WIDTH - self.palette_width, bar_height, self.palette_width, SCREEN_HEIGHT - bar_height)
+
     def run(self):
         """Main game loop"""
         while self.running:
             self.handle_events()
-            
+
             # Draw
             self.screen.fill(BLACK)
             self.draw_canvas()
             self.draw_palette()
+            self.draw_top_bar()
             
             pygame.display.flip()
             self.clock.tick(FPS)
