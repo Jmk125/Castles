@@ -1218,8 +1218,16 @@ class TileEditor:
                     bg_img.aspect_ratio_locked = not bg_img.aspect_ratio_locked
                     return
 
-                # Select this image
+                # Select this image and pan camera to show it
                 self.selected_bg_image_index = bg_img_idx
+
+                # Pan camera to center on this image
+                center_x = bg_img.x + bg_img.width // 2
+                center_y = bg_img.y + bg_img.height // 2
+                self.camera_x = max(0, min(center_x - self.canvas_rect.width // 2,
+                                           self.level_width * TILE_SIZE - self.canvas_rect.width))
+                self.camera_y = max(0, min(center_y - self.canvas_rect.height // 2,
+                                           self.level_height * TILE_SIZE - self.canvas_rect.height))
                 return
 
                 layer_y += 65
@@ -1985,9 +1993,21 @@ class TileEditor:
 
             layer_images = [img for img in self.background_layers if img.layer_index == self.current_bg_layer]
 
+            # Show helpful hint
+            if layer_images:
+                hint = self.small_font.render("Click to select & edit in canvas", True, DARK_GRAY)
+                self.screen.blit(hint, (self.palette_rect.x + 10, layer_y))
+                layer_y += 18
+
             if not layer_images:
                 hint_text = self.small_font.render("Drag & drop images here", True, DARK_GRAY)
                 self.screen.blit(hint_text, (self.palette_rect.x + 10, layer_y))
+                layer_y += 18
+                hint_text2 = self.small_font.render("Click image to select,", True, DARK_GRAY)
+                self.screen.blit(hint_text2, (self.palette_rect.x + 10, layer_y))
+                layer_y += 18
+                hint_text3 = self.small_font.render("then drag/resize in canvas", True, DARK_GRAY)
+                self.screen.blit(hint_text3, (self.palette_rect.x + 10, layer_y))
             else:
                 for idx, bg_img in enumerate(layer_images):
                     bg_img_idx = self.background_layers.index(bg_img)
