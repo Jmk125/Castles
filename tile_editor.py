@@ -105,6 +105,7 @@ class EnemyType:
     speed: float
     color: Tuple[int, int, int]  # Fallback color
     behavior_script: Optional[str] = None  # Path to custom behavior .py file
+    required: bool = False  # Required to kill to complete level
 
     def to_dict(self):
         return {
@@ -218,6 +219,16 @@ class TileEditor:
         self.next_collectible_type_id = 0
         self.collectibles: List[CollectibleInstance] = []
         self._create_placeholder_collectibles()
+
+        # Background image
+        self.background_image_path: Optional[str] = None
+        self.background_image: Optional[pygame.Surface] = None
+        self.background_x = 0
+        self.background_y = 0
+        self.background_width = 0
+        self.background_height = 0
+        self.resizing_background = False
+        self.resize_start_pos = None
 
         # Current state
         self.current_tab = EditorTab.TILES
@@ -595,7 +606,14 @@ class TileEditor:
                     self.dragging_camera = False
             
             elif event.type == pygame.MOUSEMOTION:
-                if self.dragging_camera and self.drag_start_pos:
+                if self.resizing_background and self.resize_start_pos:
+                    # Resize background image
+                    dx = event.pos[0] - self.resize_start_pos[0]
+                    dy = event.pos[1] - self.resize_start_pos[1]
+                    self.background_width = max(50, self.background_width + dx)
+                    self.background_height = max(50, self.background_height + dy)
+                    self.resize_start_pos = event.pos
+                elif self.dragging_camera and self.drag_start_pos:
                     dx = self.drag_start_pos[0] - event.pos[0]
                     dy = self.drag_start_pos[1] - event.pos[1]
                     self.camera_x = max(0, min(self.camera_x + dx, self.level_width * TILE_SIZE - self.canvas_rect.width))
@@ -609,6 +627,20 @@ class TileEditor:
     
     def handle_left_click(self, pos):
         """Handle left mouse click"""
+        # Check if clicking on background resize handle
+        if self.background_image and self.background_width > 0 and self.background_height > 0:
+            handle_size = 10
+            screen_x = self.background_x - self.camera_x
+            screen_y = self.background_y - self.camera_y
+            handle_x = screen_x + self.background_width - handle_size
+            handle_y = screen_y + self.background_height - handle_size
+            handle_rect = pygame.Rect(handle_x, handle_y, handle_size, handle_size)
+
+            if handle_rect.collidepoint(pos):
+                self.resizing_background = True
+                self.resize_start_pos = pos
+                return
+
         # Check if clicking in palette
         if self.palette_rect.collidepoint(pos):
             self.handle_palette_click(pos)
@@ -650,6 +682,12 @@ class TileEditor:
     
     def handle_left_release(self, pos):
         """Handle left mouse release"""
+        # Stop resizing background
+        if self.resizing_background:
+            self.resizing_background = False
+            self.resize_start_pos = None
+            return
+
         if self.drawing and self.draw_start_tile:
             tile_pos = self.screen_to_tile(pos[0], pos[1])
             if tile_pos:
@@ -809,6 +847,14 @@ class TileEditor:
                 return
 
             y_offset += 35  # gap after resize buttons
+
+            # Background image button
+            bg_button_rect = pygame.Rect(self.palette_rect.x + 10, y_offset, self.palette_width - 20, 25)
+            if bg_button_rect.collidepoint(pos):
+                self.load_background_image()
+                return
+
+            y_offset += 35  # gap after background button
 
         # Check plus button (all tabs)
         plus_button_rect = pygame.Rect(self.palette_rect.x + 10, y_offset, self.palette_width - 20, 30)
@@ -1069,11 +1115,51 @@ class TileEditor:
                 enemy_type.behavior_script = filepath
                 print(f"Selected behavior script: {filepath}")
 
+    def load_background_image(self):
+        """Open file dialog to select a background image"""
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+
+        filepath = filedialog.askopenfilename(
+            title="Select Background Image",
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp"), ("All files", "*.*")]
+        )
+
+        root.destroy()
+
+        if filepath:
+            try:
+                self.background_image = pygame.image.load(filepath)
+                self.background_image_path = filepath
+                # Set initial size to image size
+                self.background_width = self.background_image.get_width()
+                self.background_height = self.background_image.get_height()
+                self.background_x = 0
+                self.background_y = 0
+                print(f"Loaded background image: {filepath}")
+            except Exception as e:
+                print(f"Error loading background image: {e}")
+
     def draw_canvas(self):
         """Draw the main canvas area"""
         # Draw background
         self.screen.fill(DARK_GRAY, self.canvas_rect)
-        
+
+        # Draw background image if loaded
+        if self.background_image and self.background_width > 0 and self.background_height > 0:
+            screen_x = self.background_x - self.camera_x
+            screen_y = self.background_y - self.camera_y
+            scaled_bg = pygame.transform.scale(self.background_image, (self.background_width, self.background_height))
+            self.screen.blit(scaled_bg, (screen_x, screen_y))
+
+            # Draw resize handle (small square in bottom-right corner)
+            handle_size = 10
+            handle_x = screen_x + self.background_width - handle_size
+            handle_y = screen_y + self.background_height - handle_size
+            pygame.draw.rect(self.screen, YELLOW, (handle_x, handle_y, handle_size, handle_size))
+            pygame.draw.rect(self.screen, BLACK, (handle_x, handle_y, handle_size, handle_size), 1)
+
         # Draw grid
         start_x = -(self.camera_x % TILE_SIZE)
         start_y = -(self.camera_y % TILE_SIZE)
@@ -1301,7 +1387,17 @@ class TileEditor:
             self.screen.blit(narrower_text, (narrower_button.x + 5, narrower_button.y + 5))
 
             y_offset += 35
-        
+
+            # Background image button
+            bg_button = pygame.Rect(self.palette_rect.x + 10, y_offset, self.palette_width - 20, 25)
+            pygame.draw.rect(self.screen, BLUE if self.background_image else WHITE, bg_button)
+            pygame.draw.rect(self.screen, BLACK, bg_button, 1)
+            bg_text = self.small_font.render("Load Background Image", True, BLACK)
+            bg_text_rect = bg_text.get_rect(center=bg_button.center)
+            self.screen.blit(bg_text, bg_text_rect)
+
+            y_offset += 35
+
         # Plus button to add new items
         plus_button = pygame.Rect(self.palette_rect.x + 10, y_offset, self.palette_width - 20, 30)
         pygame.draw.rect(self.screen, GREEN, plus_button)
@@ -1421,8 +1517,11 @@ class TileEditor:
                     pygame.draw.rect(self.screen, enemy_type.color, preview_rect)
                 pygame.draw.rect(self.screen, BLACK, preview_rect, 1)
 
-                # Name
-                name_text = self.small_font.render(enemy_type.name[:15], True, BLACK)
+                # Name with required marker
+                name_display = enemy_type.name[:15]
+                if enemy_type.required:
+                    name_display += " [REQ]"
+                name_text = self.small_font.render(name_display, True, BLACK)
                 self.screen.blit(name_text, (item_rect.x + 45, item_rect.y + 5))
 
                 # Stats
@@ -1754,6 +1853,18 @@ class TileEditor:
             clear_text = self.small_font.render("Clear", True, BLACK)
             self.screen.blit(clear_text, (clear_button.x + 20, clear_button.y + 5))
 
+        y += 35
+
+        # Required checkbox
+        required_checkbox = pygame.Rect(editor_x + 10, y, 15, 15)
+        pygame.draw.rect(self.screen, WHITE, required_checkbox)
+        pygame.draw.rect(self.screen, BLACK, required_checkbox, 1)
+        if enemy_type.required:
+            pygame.draw.line(self.screen, BLACK, required_checkbox.topleft, required_checkbox.bottomright, 2)
+            pygame.draw.line(self.screen, BLACK, required_checkbox.topright, required_checkbox.bottomleft, 2)
+        required_text = self.small_font.render("Required to kill to complete level", True, BLACK)
+        self.screen.blit(required_text, (editor_x + 30, y))
+
     def draw_collectible_editor(self):
         """Draw the collectible editor dialog"""
         if self.editing_collectible_id is None:
@@ -1949,6 +2060,14 @@ class TileEditor:
                 print("Cleared behavior script")
                 return
 
+        y += 35
+
+        # Required checkbox
+        required_checkbox = pygame.Rect(editor_x + 10, y, 15, 15)
+        if required_checkbox.collidepoint(pos):
+            enemy_type.required = not enemy_type.required
+            return
+
     def handle_collectible_editor_click(self, pos):
         """Handle clicks in the collectible editor dialog"""
         if self.editing_collectible_id is None:
@@ -2042,7 +2161,14 @@ class TileEditor:
             'enemy_types': {eid: etype.to_dict() for eid, etype in self.enemy_types.items()},
             'enemies': [enemy.to_dict() for enemy in self.enemies],
             'collectible_types': {cid: ctype.to_dict() for cid, ctype in self.collectible_types.items()},
-            'collectibles': [collectible.to_dict() for collectible in self.collectibles]
+            'collectibles': [collectible.to_dict() for collectible in self.collectibles],
+            'background': {
+                'image_path': self.background_image_path,
+                'x': self.background_x,
+                'y': self.background_y,
+                'width': self.background_width,
+                'height': self.background_height
+            } if self.background_image_path else None
         }
 
         with open(filename, 'w') as f:
@@ -2116,7 +2242,8 @@ class TileEditor:
                     damage=etype_data['damage'],
                     speed=etype_data['speed'],
                     color=tuple(etype_data['color']),
-                    behavior_script=etype_data.get('behavior_script')
+                    behavior_script=etype_data.get('behavior_script'),
+                    required=etype_data.get('required', False)
                 )
                 self.next_enemy_type_id = max(self.next_enemy_type_id, eid + 1)
 
@@ -2165,6 +2292,32 @@ class TileEditor:
                     y=collectible_data['y'],
                     collectible_type_id=collectible_data['collectible_type_id']
                 ))
+
+        # Load background image
+        if 'background' in data and data['background']:
+            bg_data = data['background']
+            self.background_image_path = bg_data.get('image_path')
+            self.background_x = bg_data.get('x', 0)
+            self.background_y = bg_data.get('y', 0)
+            self.background_width = bg_data.get('width', 0)
+            self.background_height = bg_data.get('height', 0)
+
+            if self.background_image_path and os.path.exists(self.background_image_path):
+                try:
+                    self.background_image = pygame.image.load(self.background_image_path)
+                except Exception as e:
+                    print(f"Error loading background image: {e}")
+                    self.background_image = None
+            else:
+                self.background_image = None
+        else:
+            # Clear background if not in data
+            self.background_image_path = None
+            self.background_image = None
+            self.background_x = 0
+            self.background_y = 0
+            self.background_width = 0
+            self.background_height = 0
 
         print(f"Level loaded from {filename}")
     
