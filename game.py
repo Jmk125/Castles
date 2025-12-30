@@ -48,6 +48,13 @@ class CollectibleEffect(Enum):
     KEY = "key"
     POWERUP = "powerup"
 
+# Game States
+class GameState(Enum):
+    TITLE = "title"
+    PLAYING = "playing"
+    GAME_OVER = "game_over"
+    HIGH_SCORES = "high_scores"
+
 @dataclass
 class TileType:
     id: int
@@ -714,39 +721,289 @@ class Level:
         for enemy in self.enemies:
             enemy.draw(screen, camera_x, camera_y)
 
+class HighScoreManager:
+    """Manages high scores with persistence"""
+    def __init__(self, filename: str = "high_scores.json"):
+        self.filename = filename
+        self.scores: List[Tuple[str, int]] = []
+        self.load_scores()
+
+    def load_scores(self):
+        """Load high scores from file"""
+        try:
+            if os.path.exists(self.filename):
+                with open(self.filename, 'r') as f:
+                    data = json.load(f)
+                    self.scores = [(entry['name'], entry['score']) for entry in data]
+        except Exception as e:
+            print(f"Error loading high scores: {e}")
+            self.scores = []
+
+    def save_scores(self):
+        """Save high scores to file"""
+        try:
+            data = [{'name': name, 'score': score} for name, score in self.scores]
+            with open(self.filename, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"Error saving high scores: {e}")
+
+    def add_score(self, name: str, score: int):
+        """Add a new score and keep top 10"""
+        self.scores.append((name, score))
+        self.scores.sort(key=lambda x: x[1], reverse=True)
+        self.scores = self.scores[:10]  # Keep top 10
+        self.save_scores()
+
+    def is_high_score(self, score: int) -> bool:
+        """Check if score qualifies as a high score"""
+        if len(self.scores) < 10:
+            return True
+        return score > self.scores[-1][1]
+
+    def get_scores(self) -> List[Tuple[str, int]]:
+        """Get all high scores"""
+        return self.scores
+
+class TitleScreen:
+    """Retro-style title screen with menu"""
+    def __init__(self, screen, font, large_font):
+        self.screen = screen
+        self.font = font
+        self.large_font = large_font
+        self.title_font = pygame.font.Font(None, 72)
+
+        # Menu options
+        self.menu_items = ["Start Run", "High Scores", "Quit"]
+        self.selected_index = 0
+
+        # Colors for retro effect
+        self.title_color = (220, 180, 100)  # Gold
+        self.menu_color = (200, 200, 200)   # Light gray
+        self.selected_color = (255, 255, 100)  # Yellow
+        self.bg_color = (20, 10, 30)  # Dark purple
+
+        # Animation
+        self.pulse_timer = 0
+
+    def handle_input(self, event) -> Optional[str]:
+        """Handle menu input, returns action or None"""
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP or event.key == pygame.K_w:
+                self.selected_index = (self.selected_index - 1) % len(self.menu_items)
+            elif event.key == pygame.K_DOWN or event.key == pygame.K_s:
+                self.selected_index = (self.selected_index + 1) % len(self.menu_items)
+            elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                return self.menu_items[self.selected_index]
+            elif event.key == pygame.K_ESCAPE:
+                return "Quit"
+        return None
+
+    def update(self):
+        """Update animations"""
+        self.pulse_timer += 1
+
+    def draw(self):
+        """Draw the title screen"""
+        # Background
+        self.screen.fill(self.bg_color)
+
+        # Draw decorative elements (retro style)
+        for i in range(0, SCREEN_WIDTH, 40):
+            for j in range(0, SCREEN_HEIGHT, 40):
+                if (i + j) % 80 == 0:
+                    pygame.draw.rect(self.screen, (30, 20, 40), (i, j, 20, 20))
+
+        # Title with shadow effect
+        title_text = "CASTLES"
+        # Shadow
+        title_shadow = self.title_font.render(title_text, True, BLACK)
+        shadow_rect = title_shadow.get_rect(center=(SCREEN_WIDTH // 2 + 4, 120 + 4))
+        self.screen.blit(title_shadow, shadow_rect)
+        # Main title
+        pulse_offset = int(5 * abs(((self.pulse_timer % 60) / 60.0) * 2 - 1))
+        title_color_pulsed = (
+            min(255, self.title_color[0] + pulse_offset),
+            min(255, self.title_color[1] + pulse_offset),
+            min(255, self.title_color[2] + pulse_offset)
+        )
+        title = self.title_font.render(title_text, True, title_color_pulsed)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 120))
+        self.screen.blit(title, title_rect)
+
+        # Subtitle
+        subtitle = self.font.render("A Retro Adventure", True, self.menu_color)
+        subtitle_rect = subtitle.get_rect(center=(SCREEN_WIDTH // 2, 180))
+        self.screen.blit(subtitle, subtitle_rect)
+
+        # Menu items
+        menu_start_y = 300
+        menu_spacing = 50
+
+        for i, item in enumerate(self.menu_items):
+            # Determine color
+            if i == self.selected_index:
+                color = self.selected_color
+                # Draw selection indicator
+                indicator = "> "
+                indicator_text = self.large_font.render(indicator, True, color)
+                indicator_rect = indicator_text.get_rect(center=(SCREEN_WIDTH // 2 - 100, menu_start_y + i * menu_spacing))
+                self.screen.blit(indicator_text, indicator_rect)
+            else:
+                color = self.menu_color
+
+            # Draw menu item
+            text = self.large_font.render(item, True, color)
+            text_rect = text.get_rect(center=(SCREEN_WIDTH // 2, menu_start_y + i * menu_spacing))
+            self.screen.blit(text, text_rect)
+
+        # Instructions at bottom
+        instructions = self.font.render("Use Arrow Keys or W/S to navigate, Enter/Space to select", True, (150, 150, 150))
+        instructions_rect = instructions.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
+        self.screen.blit(instructions, instructions_rect)
+
+class HighScoresScreen:
+    """Display high scores"""
+    def __init__(self, screen, font, large_font, high_score_manager):
+        self.screen = screen
+        self.font = font
+        self.large_font = large_font
+        self.title_font = pygame.font.Font(None, 64)
+        self.high_score_manager = high_score_manager
+
+        # Colors
+        self.title_color = (220, 180, 100)  # Gold
+        self.text_color = (200, 200, 200)   # Light gray
+        self.bg_color = (20, 10, 30)  # Dark purple
+
+    def handle_input(self, event) -> Optional[str]:
+        """Handle input, returns action or None"""
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE or event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                return "back"
+        return None
+
+    def draw(self):
+        """Draw the high scores screen"""
+        # Background
+        self.screen.fill(self.bg_color)
+
+        # Draw decorative elements
+        for i in range(0, SCREEN_WIDTH, 40):
+            for j in range(0, SCREEN_HEIGHT, 40):
+                if (i + j) % 80 == 0:
+                    pygame.draw.rect(self.screen, (30, 20, 40), (i, j, 20, 20))
+
+        # Title
+        title = self.title_font.render("HIGH SCORES", True, self.title_color)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 80))
+        self.screen.blit(title, title_rect)
+
+        # Draw scores
+        scores = self.high_score_manager.get_scores()
+        start_y = 180
+        spacing = 45
+
+        if not scores:
+            # No scores yet
+            no_scores_text = self.large_font.render("No high scores yet!", True, self.text_color)
+            no_scores_rect = no_scores_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+            self.screen.blit(no_scores_text, no_scores_rect)
+        else:
+            # Draw header
+            header = self.font.render("RANK    NAME                SCORE", True, (150, 150, 100))
+            header_rect = header.get_rect(center=(SCREEN_WIDTH // 2, start_y - 40))
+            self.screen.blit(header, header_rect)
+
+            # Draw separator line
+            pygame.draw.line(self.screen, (100, 100, 100),
+                           (SCREEN_WIDTH // 2 - 250, start_y - 20),
+                           (SCREEN_WIDTH // 2 + 250, start_y - 20), 2)
+
+            # Draw each score
+            for i, (name, score) in enumerate(scores):
+                rank_text = f"{i + 1:2d}."
+                name_text = f"{name[:15]:15s}"  # Limit name to 15 chars
+                score_text = f"{score:8d}"
+
+                # Color based on rank
+                if i == 0:
+                    color = (255, 215, 0)  # Gold
+                elif i == 1:
+                    color = (192, 192, 192)  # Silver
+                elif i == 2:
+                    color = (205, 127, 50)  # Bronze
+                else:
+                    color = self.text_color
+
+                full_text = f"{rank_text}  {name_text}  {score_text}"
+                text_surface = self.large_font.render(full_text, True, color)
+                text_rect = text_surface.get_rect(center=(SCREEN_WIDTH // 2, start_y + i * spacing))
+                self.screen.blit(text_surface, text_rect)
+
+        # Instructions at bottom
+        instructions = self.font.render("Press ESC, Enter, or Space to return", True, (150, 150, 150))
+        instructions_rect = instructions.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
+        self.screen.blit(instructions, instructions_rect)
+
 class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Castlevania Game")
+        pygame.display.set_caption("Castles")
         self.clock = pygame.time.Clock()
         self.running = True
-        
-        # Load levels
-        self.levels = self.load_all_levels()
+
+        # Font for UI (initialize before screens)
+        self.font = pygame.font.Font(None, 24)
+        self.small_font = pygame.font.Font(None, 18)
+        self.large_font = pygame.font.Font(None, 48)
+
+        # Game state - start at title screen
+        self.state = GameState.TITLE
+        self.game_over = False
+
+        # High score management
+        self.high_score_manager = HighScoreManager()
+
+        # Screens
+        self.title_screen = TitleScreen(self.screen, self.font, self.large_font)
+        self.high_scores_screen = HighScoresScreen(self.screen, self.font, self.large_font, self.high_score_manager)
+
+        # Game data (initialized when starting a run)
+        self.levels = []
         self.current_level_index = 0
-        
-        if not self.levels:
-            print("No level files found! Please create a level first.")
-            self.running = False
-            return
-        
-        self.level = self.levels[self.current_level_index]
-        
-        # Create player at spawn point (for now, just start at a safe location)
-        self.player = Player(100, 100)
-        
+        self.level = None
+        self.player = None
+
         # Camera
         self.camera_x = 0
         self.camera_y = 0
 
-        # Game state
-        self.game_over = False
-
-        # Font for UI
-        self.font = pygame.font.Font(None, 24)
-        self.small_font = pygame.font.Font(None, 18)
-        self.large_font = pygame.font.Font(None, 48)
+        # Total score across all levels in current run
+        self.total_score = 0
     
+    def start_run(self):
+        """Start a new game run"""
+        # Load all levels
+        self.levels = self.load_all_levels()
+        self.current_level_index = 0
+
+        if not self.levels:
+            print("No level files found! Please create a level first.")
+            self.state = GameState.TITLE
+            return
+
+        # Initialize game
+        self.level = self.levels[self.current_level_index]
+        self.player = Player(100, 100)
+        self.camera_x = 0
+        self.camera_y = 0
+        self.game_over = False
+        self.total_score = 0
+
+        # Switch to playing state
+        self.state = GameState.PLAYING
+
     def load_all_levels(self):
         """Load all level JSON files from current directory in numerical order"""
         levels = []
@@ -878,6 +1135,9 @@ class Game:
 
     def advance_level(self):
         """Advance to the next level or restart current level if no next level"""
+        # Add current level score to total
+        self.total_score += self.level.score
+
         # Try to move to next level
         next_level_index = self.current_level_index + 1
 
@@ -887,9 +1147,13 @@ class Game:
             self.level = self.levels[self.current_level_index]
             print(f"Level complete! Moving to level {self.current_level_index + 1}")
         else:
-            # No more levels, restart current level
-            print("Level complete! No more levels, restarting current level...")
-            self.level = Level(self.level.filename)
+            # No more levels - game won! Save high score and return to menu
+            print("All levels complete! You won!")
+            final_score = self.total_score
+            if final_score > 0:
+                self.high_score_manager.add_score("PLAYER", final_score)
+            self.state = GameState.TITLE
+            return
 
         # Reset player position only (keep health for roguelike continuity)
         self.player.x = 100
@@ -900,6 +1164,11 @@ class Game:
         # Death from health loss
         if self.player.health <= 0:
             self.game_over = True
+            # Save high score
+            final_score = self.total_score + self.level.score
+            if final_score > 0:
+                self.high_score_manager.add_score("PLAYER", final_score)
+            self.total_score = final_score
             return
 
         # Death from falling off the bottom of the level
@@ -908,6 +1177,11 @@ class Game:
             print("Player fell off the level!")
             self.game_over = True
             self.player.health = 0  # Set health to 0 for consistency
+            # Save high score
+            final_score = self.total_score + self.level.score
+            if final_score > 0:
+                self.high_score_manager.add_score("PLAYER", final_score)
+            self.total_score = final_score
 
     def draw_game_over(self):
         """Draw game over screen"""
@@ -919,16 +1193,28 @@ class Game:
 
         # Game Over text
         game_over_text = self.large_font.render("GAME OVER", True, RED)
-        text_rect = game_over_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50))
+        text_rect = game_over_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 100))
         self.screen.blit(game_over_text, text_rect)
 
+        # Show final score
+        final_score = self.total_score
+        score_text = self.large_font.render(f"Final Score: {final_score}", True, WHITE)
+        score_rect = score_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30))
+        self.screen.blit(score_text, score_rect)
+
+        # Check if it's a high score
+        if self.high_score_manager.is_high_score(final_score) and final_score > 0:
+            high_score_text = self.font.render("NEW HIGH SCORE!", True, (255, 215, 0))
+            hs_rect = high_score_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 10))
+            self.screen.blit(high_score_text, hs_rect)
+
         # Instructions
-        restart_text = self.font.render("Press R to Restart", True, WHITE)
-        restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 20))
-        self.screen.blit(restart_text, restart_rect)
+        menu_text = self.font.render("Press ENTER to return to menu", True, WHITE)
+        menu_rect = menu_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 60))
+        self.screen.blit(menu_text, menu_rect)
 
         quit_text = self.font.render("Press ESC to Quit", True, WHITE)
-        quit_rect = quit_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50))
+        quit_rect = quit_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 90))
         self.screen.blit(quit_text, quit_rect)
 
     def draw_ui(self):
@@ -955,11 +1241,12 @@ class Game:
         
         # Level info
         level_text = self.font.render(f"Level {self.current_level_index + 1}/{len(self.levels)}", True, WHITE)
-        self.screen.blit(level_text, (SCREEN_WIDTH - 150, 10))
+        self.screen.blit(level_text, (SCREEN_WIDTH - 200, 10))
 
-        # Score
-        score_text = self.font.render(f"Score: {self.level.score}", True, WHITE)
-        self.screen.blit(score_text, (SCREEN_WIDTH - 150, 40))
+        # Score (show total + current level)
+        current_score = self.total_score + self.level.score
+        score_text = self.font.render(f"Score: {current_score}", True, WHITE)
+        self.screen.blit(score_text, (SCREEN_WIDTH - 200, 40))
 
         # Keys
         keys_text = self.font.render(f"Keys: {self.level.keys_collected}", True, WHITE)
@@ -998,61 +1285,90 @@ class Game:
         print("Level restarted")
     
     def handle_events(self):
-        """Handle input events"""
+        """Handle input events based on current state"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
+
+            # Handle events based on current state
+            if self.state == GameState.TITLE:
+                action = self.title_screen.handle_input(event)
+                if action == "Start Run":
+                    self.start_run()
+                elif action == "High Scores":
+                    self.state = GameState.HIGH_SCORES
+                elif action == "Quit":
                     self.running = False
-                elif event.key == pygame.K_r:
-                    self.restart_level()
-                elif event.key == pygame.K_n:
-                    self.next_level()
-                elif event.key == pygame.K_SPACE:
-                    # Attack with spacebar
-                    if not self.game_over:
-                        self.player.start_attack()
+
+            elif self.state == GameState.HIGH_SCORES:
+                action = self.high_scores_screen.handle_input(event)
+                if action == "back":
+                    self.state = GameState.TITLE
+
+            elif self.state == GameState.PLAYING:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        # Return to title screen
+                        self.state = GameState.TITLE
+                    elif event.key == pygame.K_SPACE:
+                        # Attack with spacebar
+                        if not self.game_over:
+                            self.player.start_attack()
+                    elif event.key == pygame.K_RETURN:
+                        # If game over, return to menu
+                        if self.game_over:
+                            self.state = GameState.TITLE
     
     def run(self):
         """Main game loop"""
         while self.running:
             self.handle_events()
 
-            if not self.game_over:
-                # Get input
-                keys = pygame.key.get_pressed()
+            # Update and draw based on current state
+            if self.state == GameState.TITLE:
+                self.title_screen.update()
+                self.title_screen.draw()
 
-                # Update
-                self.player.update(keys, self.level)
+            elif self.state == GameState.HIGH_SCORES:
+                self.high_scores_screen.draw()
 
-                # Update enemies
-                for enemy in self.level.enemies:
-                    enemy.update(self.player, self.level)
+            elif self.state == GameState.PLAYING:
+                if not self.game_over:
+                    # Get input
+                    keys = pygame.key.get_pressed()
 
-                # Check collisions
-                self.check_enemy_collisions()
-                self.check_collectible_collisions()
-                self.check_player_attack_collisions()
+                    # Update
+                    self.player.update(keys, self.level)
 
-                # Check if player is dead
-                self.check_player_death()
+                    # Update enemies
+                    for enemy in self.level.enemies:
+                        enemy.update(self.player, self.level)
 
-                # Check if player completed the level
-                if self.check_end_level_collision():
-                    self.advance_level()
+                    # Check collisions
+                    self.check_enemy_collisions()
+                    self.check_collectible_collisions()
+                    self.check_player_attack_collisions()
 
-                self.update_camera()
+                    # Check if player is dead
+                    self.check_player_death()
 
-            # Draw
-            self.screen.fill(BLACK)
-            self.level.draw(self.screen, self.camera_x, self.camera_y)
-            self.player.draw(self.screen, self.camera_x, self.camera_y)
-            self.draw_ui()
+                    # Check if player completed the level
+                    if self.check_end_level_collision():
+                        self.advance_level()
 
-            # Draw game over screen if player is dead
-            if self.game_over:
-                self.draw_game_over()
+                    self.update_camera()
+
+                # Draw game
+                self.screen.fill(BLACK)
+                if self.level:
+                    self.level.draw(self.screen, self.camera_x, self.camera_y)
+                if self.player:
+                    self.player.draw(self.screen, self.camera_x, self.camera_y)
+                    self.draw_ui()
+
+                # Draw game over screen if player is dead
+                if self.game_over:
+                    self.draw_game_over()
 
             pygame.display.flip()
             self.clock.tick(FPS)
