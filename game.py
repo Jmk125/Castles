@@ -1123,9 +1123,9 @@ class Game:
         viewport_width = self.level.viewport_width
         viewport_height = self.level.viewport_height
 
-        # Center camera on player
+        # Center camera on player horizontally, keep player 25% up from bottom vertically
         target_x = self.player.x + self.player.width // 2 - viewport_width // 2
-        target_y = self.player.y + self.player.height // 2 - viewport_height // 2
+        target_y = self.player.y + self.player.height // 2 - int(viewport_height * 0.75)
 
         # Clamp camera to level bounds
         max_camera_x = max(0, self.level.width * TILE_SIZE - viewport_width)
