@@ -53,6 +53,7 @@ class TileProperty(Enum):
     BACKGROUND = "background"
     LADDER = "ladder"
     END_LEVEL = "end_level"
+    PLAYER_START = "player_start"
 
 # Enemy AI Types
 class EnemyAI(Enum):
@@ -347,6 +348,9 @@ class TileEditor:
 
         # Breakable tile
         self.add_tile_type("Breakable", None, [TileProperty.BREAKABLE.value, TileProperty.SOLID.value], ORANGE)
+
+        # Player start tile
+        self.add_tile_type("Player Start", None, [TileProperty.PLAYER_START.value], PURPLE)
 
     def _create_placeholder_enemies(self):
         """Create starter enemy types"""
