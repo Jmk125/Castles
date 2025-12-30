@@ -781,27 +781,36 @@ class TileEditor:
 
         # Check if clicking on background layer images (new system - SIMPLE!)
         if self.current_tab == EditorTab.BACKGROUND and self.canvas_rect.collidepoint(pos):
+            print(f"DEBUG: Background tab click at {pos}, camera at ({self.camera_x}, {self.camera_y})")
+            print(f"DEBUG: Number of background layers: {len(self.background_layers)}")
+            print(f"DEBUG: Selected bg index: {self.selected_bg_image_index}")
+
             # If there's a selected image, check if clicking on it to drag
             if self.selected_bg_image_index is not None:
                 bg_img = self.background_layers[self.selected_bg_image_index]
                 screen_x = bg_img.x - self.camera_x
                 screen_y = bg_img.y - self.camera_y
                 img_rect = pygame.Rect(screen_x, screen_y, bg_img.width, bg_img.height)
+                print(f"DEBUG: Selected image screen rect: {img_rect}")
+                print(f"DEBUG: Click collides with selected? {img_rect.collidepoint(pos)}")
 
                 # Left click anywhere on selected image = drag to move
                 if img_rect.collidepoint(pos):
+                    print("DEBUG: Starting drag!")
                     self.dragging_bg_image = True
                     self.bg_drag_start_pos = pos
                     return
 
             # Check if clicking on any background image to select it
-            for bg_img in reversed(self.background_layers):
+            for i, bg_img in enumerate(reversed(self.background_layers)):
                 screen_x = bg_img.x - self.camera_x
                 screen_y = bg_img.y - self.camera_y
                 img_rect = pygame.Rect(screen_x, screen_y, bg_img.width, bg_img.height)
+                print(f"DEBUG: Layer {i} screen rect: {img_rect}, collides: {img_rect.collidepoint(pos)}")
 
                 if img_rect.collidepoint(pos):
                     self.selected_bg_image_index = self.background_layers.index(bg_img)
+                    print(f"DEBUG: Selected layer index: {self.selected_bg_image_index}")
                     return
 
         # Check if clicking in palette
@@ -920,14 +929,19 @@ class TileEditor:
 
             elif self.current_tab == EditorTab.BACKGROUND:
                 # Right click on selected background image = resize
+                print(f"DEBUG: Right click on BACKGROUND tab at {pos}")
+                print(f"DEBUG: Selected bg index: {self.selected_bg_image_index}")
                 if self.selected_bg_image_index is not None:
                     bg_img = self.background_layers[self.selected_bg_image_index]
                     screen_x = bg_img.x - self.camera_x
                     screen_y = bg_img.y - self.camera_y
                     img_rect = pygame.Rect(screen_x, screen_y, bg_img.width, bg_img.height)
+                    print(f"DEBUG: Selected image screen rect: {img_rect}")
+                    print(f"DEBUG: Right click collides? {img_rect.collidepoint(pos)}")
 
                     # Right click anywhere on selected image = resize
                     if img_rect.collidepoint(pos):
+                        print("DEBUG: Starting resize!")
                         self.resizing_bg_image = True
                         self.bg_resize_start_pos = pos
     
@@ -938,6 +952,7 @@ class TileEditor:
             bg_img = self.background_layers[self.selected_bg_image_index]
             dx = pos[0] - self.bg_drag_start_pos[0]
             dy = pos[1] - self.bg_drag_start_pos[1]
+            print(f"DEBUG: Dragging bg image, dx={dx}, dy={dy}, new pos=({bg_img.x + dx}, {bg_img.y + dy})")
             bg_img.x += dx
             bg_img.y += dy
             self.bg_drag_start_pos = pos
