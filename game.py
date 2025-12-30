@@ -1,6 +1,7 @@
 import pygame
 import json
 import os
+import argparse
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
@@ -16,8 +17,8 @@ TILE_SIZE = 16
 FPS = 60
 GRAVITY = 0.5
 MAX_FALL_SPEED = 10
-# Higher values push the player lower on the screen.
-CAMERA_PLAYER_VERTICAL_FRACTION = 0.9
+# Fraction of the viewport height where the player must move above before the camera follows vertically.
+CAMERA_VERTICAL_TRIGGER_FRACTION = 0.5
 
 # Colors
 WHITE = (255, 255, 255)
@@ -1051,6 +1052,7 @@ class Game:
         pygame.display.set_caption("Castles")
         self.clock = pygame.time.Clock()
         self.running = True
+        self.test_mode = False
 
         # Font for UI (initialize before screens)
         self.font = pygame.font.Font(None, 24)
@@ -1086,6 +1088,7 @@ class Game:
         # Load all levels
         self.levels = self.load_all_levels()
         self.current_level_index = 0
+        self.test_mode = False
 
         if not self.levels:
             print("No level files found! Please create a level first.")
@@ -1102,6 +1105,19 @@ class Game:
         self.total_score = 0
 
         # Switch to playing state
+        self.state = GameState.PLAYING
+
+    def start_test_level(self, level_path: str):
+        """Start a test run for a single level and exit on escape."""
+        self.levels = [Level(level_path)]
+        self.current_level_index = 0
+        self.level = self.levels[self.current_level_index]
+        self.player = Player(100, 100)
+        self.camera_x = self.level.viewport_x
+        self.camera_y = self.level.viewport_y
+        self.game_over = False
+        self.total_score = 0
+        self.test_mode = True
         self.state = GameState.PLAYING
 
     def load_all_levels(self):
@@ -1127,9 +1143,11 @@ class Game:
 
         # Center camera on player horizontally, keep player's feet near bottom vertically
         target_x = self.player.x + self.player.width // 2 - viewport_width // 2
-        target_y = self.player.y + self.player.height - int(
-            viewport_height * CAMERA_PLAYER_VERTICAL_FRACTION
-        )
+        target_y = self.camera_y
+        player_center_y = self.player.y + self.player.height / 2
+        trigger_y = viewport_height * CAMERA_VERTICAL_TRIGGER_FRACTION
+        if player_center_y - self.camera_y < trigger_y:
+            target_y = player_center_y - trigger_y
 
         # Clamp camera to level bounds
         max_camera_x = max(0, self.level.width * TILE_SIZE - viewport_width)
@@ -1414,8 +1432,11 @@ class Game:
             elif self.state == GameState.PLAYING:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        # Return to title screen
-                        self.state = GameState.TITLE
+                        if self.test_mode:
+                            self.running = False
+                        else:
+                            # Return to title screen
+                            self.state = GameState.TITLE
                     elif event.key == pygame.K_SPACE:
                         # Attack with spacebar
                         if not self.game_over:
@@ -1495,5 +1516,11 @@ class Game:
         pygame.quit()
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Castles game")
+    parser.add_argument("--test-level", dest="test_level", help="Run a single level in test mode.")
+    args = parser.parse_args()
+
     game = Game()
+    if args.test_level:
+        game.start_test_level(args.test_level)
     game.run()
