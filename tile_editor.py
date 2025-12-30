@@ -739,7 +739,8 @@ class TileEditor:
     def handle_left_click(self, pos):
         """Handle left mouse click"""
         # Check if clicking on viewport controls (in canvas area)
-        if self.canvas_rect.collidepoint(pos):
+        # Skip viewport controls when on BACKGROUND tab to allow background image dragging
+        if self.current_tab != EditorTab.BACKGROUND and self.canvas_rect.collidepoint(pos):
             viewport_screen_x = self.viewport_x - self.camera_x
             viewport_screen_y = self.viewport_y - self.camera_y
 
