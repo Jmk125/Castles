@@ -114,7 +114,10 @@ class Player:
         # Apply vertical movement
         self.y += self.vel_y
         self.handle_vertical_collisions(level)
-        
+
+        # Enforce level boundaries
+        self.handle_level_boundaries(level)
+
         # Check for hazards
         self.check_hazards(level)
         
@@ -175,14 +178,30 @@ class Player:
     def check_hazards(self, level):
         """Check if player is touching hazards"""
         player_rect = self.get_rect()
-        
+
         for (tile_x, tile_y), tile in level.get_hazard_tiles():
             tile_rect = pygame.Rect(tile_x * TILE_SIZE, tile_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-            
+
             if player_rect.colliderect(tile_rect):
                 self.health -= 1  # Damage over time
                 if self.health <= 0:
                     self.health = 0
+
+    def handle_level_boundaries(self, level):
+        """Prevent player from moving past level boundaries"""
+        # Clamp horizontal position
+        max_x = level.width * TILE_SIZE - self.width
+        self.x = max(0, min(self.x, max_x))
+
+        # Clamp vertical position
+        max_y = level.height * TILE_SIZE - self.height
+        self.y = max(0, min(self.y, max_y))
+
+        # Stop velocity if hitting boundaries
+        if self.x <= 0 or self.x >= max_x:
+            self.vel_x = 0
+        if self.y <= 0 or self.y >= max_y:
+            self.vel_y = 0
     
     def draw(self, screen, camera_x, camera_y):
         """Draw the player"""
