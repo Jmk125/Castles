@@ -1082,14 +1082,18 @@ class Game:
         return levels
     
     def update_camera(self):
-        """Update camera to follow player"""
+        """Update camera to follow player, using viewport size for zoom"""
+        # Use viewport dimensions (smaller viewport = more zoom)
+        viewport_width = self.level.viewport_width
+        viewport_height = self.level.viewport_height
+
         # Center camera on player
-        target_x = self.player.x + self.player.width // 2 - SCREEN_WIDTH // 2
-        target_y = self.player.y + self.player.height // 2 - SCREEN_HEIGHT // 2
+        target_x = self.player.x + self.player.width // 2 - viewport_width // 2
+        target_y = self.player.y + self.player.height // 2 - viewport_height // 2
 
         # Clamp camera to level bounds
-        max_camera_x = max(0, self.level.width * TILE_SIZE - SCREEN_WIDTH)
-        max_camera_y = max(0, self.level.height * TILE_SIZE - SCREEN_HEIGHT)
+        max_camera_x = max(0, self.level.width * TILE_SIZE - viewport_width)
+        max_camera_y = max(0, self.level.height * TILE_SIZE - viewport_height)
 
         self.camera_x = max(0, min(target_x, max_camera_x))
         self.camera_y = max(0, min(target_y, max_camera_y))
@@ -1420,13 +1424,26 @@ class Game:
 
                     self.update_camera()
 
-                # Draw game
+                # Draw game with viewport scaling for zoom effect
                 self.screen.fill(BLACK)
+
                 if self.level:
-                    self.level.draw(self.screen, self.camera_x, self.camera_y)
-                if self.player:
-                    self.player.draw(self.screen, self.camera_x, self.camera_y)
-                    self.draw_ui()
+                    # Create a surface at viewport size (smaller = more zoomed in)
+                    viewport_surface = pygame.Surface((self.level.viewport_width, self.level.viewport_height))
+                    viewport_surface.fill(BLACK)
+
+                    # Draw level and player to viewport surface
+                    self.level.draw(viewport_surface, self.camera_x, self.camera_y)
+                    if self.player:
+                        self.player.draw(viewport_surface, self.camera_x, self.camera_y)
+
+                    # Scale viewport surface to fill the screen (creates zoom effect)
+                    scaled_surface = pygame.transform.scale(viewport_surface, (SCREEN_WIDTH, SCREEN_HEIGHT))
+                    self.screen.blit(scaled_surface, (0, 0))
+
+                    # Draw UI on top (not scaled)
+                    if self.player:
+                        self.draw_ui()
 
                 # Draw game over screen if player is dead
                 if self.game_over:
