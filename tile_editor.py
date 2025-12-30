@@ -32,6 +32,12 @@ YELLOW = (255, 255, 100)
 PURPLE = (200, 100, 255)
 ORANGE = (255, 165, 0)
 
+# Editor Tabs
+class EditorTab(Enum):
+    TILES = "tiles"
+    ENEMIES = "enemies"
+    OBJECTS = "objects"
+
 # Tile Properties
 class TileProperty(Enum):
     SOLID = "solid"
@@ -40,6 +46,20 @@ class TileProperty(Enum):
     HAZARD = "hazard"
     BACKGROUND = "background"
     LADDER = "ladder"
+
+# Enemy AI Types
+class EnemyAI(Enum):
+    STATIONARY = "stationary"
+    PATROL = "patrol"
+    CHASE = "chase"
+    FLYING = "flying"
+
+# Collectible Types
+class CollectibleEffect(Enum):
+    HEALTH = "health"
+    SCORE = "score"
+    KEY = "key"
+    POWERUP = "powerup"
 
 @dataclass
 class TileType:
@@ -63,11 +83,83 @@ class TileType:
 class Tile:
     tile_type_id: int
     layer: str
-    
+
     def to_dict(self):
         return {
             'tile_type_id': self.tile_type_id,
             'layer': self.layer
+        }
+
+@dataclass
+class EnemyType:
+    id: int
+    name: str
+    image_path: Optional[str]
+    image: Optional[pygame.Surface]
+    ai_type: str  # EnemyAI enum value
+    health: int
+    damage: int
+    speed: float
+    color: Tuple[int, int, int]  # Fallback color
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'image_path': self.image_path,
+            'ai_type': self.ai_type,
+            'health': self.health,
+            'damage': self.damage,
+            'speed': self.speed,
+            'color': self.color
+        }
+
+@dataclass
+class EnemyInstance:
+    x: int
+    y: int
+    enemy_type_id: int
+    patrol_range: int = 100  # For patrol AI
+
+    def to_dict(self):
+        return {
+            'x': self.x,
+            'y': self.y,
+            'enemy_type_id': self.enemy_type_id,
+            'patrol_range': self.patrol_range
+        }
+
+@dataclass
+class CollectibleType:
+    id: int
+    name: str
+    image_path: Optional[str]
+    image: Optional[pygame.Surface]
+    effect: str  # CollectibleEffect enum value
+    value: int  # How much health, score, etc.
+    color: Tuple[int, int, int]  # Fallback color
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'image_path': self.image_path,
+            'effect': self.effect,
+            'value': self.value,
+            'color': self.color
+        }
+
+@dataclass
+class CollectibleInstance:
+    x: int
+    y: int
+    collectible_type_id: int
+
+    def to_dict(self):
+        return {
+            'x': self.x,
+            'y': self.y,
+            'collectible_type_id': self.collectible_type_id
         }
 
 class Tool(Enum):
@@ -107,12 +199,28 @@ class TileEditor:
         self.tile_types: Dict[int, TileType] = {}
         self.next_tile_id = 0
         self._create_placeholder_tiles()
-        
+
+        # Enemy types and instances
+        self.enemy_types: Dict[int, EnemyType] = {}
+        self.next_enemy_type_id = 0
+        self.enemies: List[EnemyInstance] = []
+        self._create_placeholder_enemies()
+
+        # Collectible types and instances
+        self.collectible_types: Dict[int, CollectibleType] = {}
+        self.next_collectible_type_id = 0
+        self.collectibles: List[CollectibleInstance] = []
+        self._create_placeholder_collectibles()
+
         # Current state
+        self.current_tab = EditorTab.TILES
         self.current_tile_type_id = 0
+        self.current_enemy_type_id = None
+        self.current_collectible_type_id = None
         self.current_layer = 'main'
         self.layer_visibility = {'background': True, 'main': True, 'foreground': True}
         self.current_tool = Tool.PENCIL
+        self.selected_entity_index = None  # For selecting placed enemies/collectibles
         
         # Drawing state
         self.drawing = False
@@ -140,21 +248,46 @@ class TileEditor:
         """Create starter placeholder tiles"""
         # Ground tile
         self.add_tile_type("Ground", None, [TileProperty.SOLID.value], GREEN)
-        
+
         # Platform tile
         self.add_tile_type("Platform", None, [TileProperty.PLATFORM.value], BLUE)
-        
+
         # Hazard tile
         self.add_tile_type("Hazard", None, [TileProperty.HAZARD.value, TileProperty.SOLID.value], RED)
-        
+
         # Background tile
         self.add_tile_type("Background", None, [TileProperty.BACKGROUND.value], LIGHT_GRAY)
-        
+
         # Ladder tile
         self.add_tile_type("Ladder", None, [TileProperty.LADDER.value], YELLOW)
-        
+
         # Breakable tile
         self.add_tile_type("Breakable", None, [TileProperty.BREAKABLE.value, TileProperty.SOLID.value], ORANGE)
+
+    def _create_placeholder_enemies(self):
+        """Create starter enemy types"""
+        # Skeleton - basic patrol enemy
+        self.add_enemy_type("Skeleton", None, EnemyAI.PATROL.value, 3, 1, 1.5, RED)
+
+        # Ghost - flying chase enemy
+        self.add_enemy_type("Ghost", None, EnemyAI.FLYING.value, 2, 1, 2.0, PURPLE)
+
+        # Spikes - stationary hazard
+        self.add_enemy_type("Spikes", None, EnemyAI.STATIONARY.value, 999, 2, 0, DARK_GRAY)
+
+    def _create_placeholder_collectibles(self):
+        """Create starter collectible types"""
+        # Health potion
+        self.add_collectible_type("Health Potion", None, CollectibleEffect.HEALTH.value, 20, GREEN)
+
+        # Coin
+        self.add_collectible_type("Coin", None, CollectibleEffect.SCORE.value, 100, YELLOW)
+
+        # Key
+        self.add_collectible_type("Key", None, CollectibleEffect.KEY.value, 1, BLUE)
+
+        # Power Up
+        self.add_collectible_type("Power Up", None, CollectibleEffect.POWERUP.value, 1, PURPLE)
         
     def add_tile_type(self, name: str, image_path: Optional[str], properties: List[str], color: Tuple[int, int, int]):
         """Add a new tile type"""
@@ -165,7 +298,7 @@ class TileEditor:
                 image = pygame.transform.scale(image, (TILE_SIZE, TILE_SIZE))
             except:
                 pass
-        
+
         tile_type = TileType(
             id=self.next_tile_id,
             name=name,
@@ -177,6 +310,54 @@ class TileEditor:
         self.tile_types[self.next_tile_id] = tile_type
         self.next_tile_id += 1
         return tile_type.id
+
+    def add_enemy_type(self, name: str, image_path: Optional[str], ai_type: str, health: int, damage: int, speed: float, color: Tuple[int, int, int]):
+        """Add a new enemy type"""
+        image = None
+        if image_path and os.path.exists(image_path):
+            try:
+                image = pygame.image.load(image_path)
+                image = pygame.transform.scale(image, (TILE_SIZE, TILE_SIZE))
+            except:
+                pass
+
+        enemy_type = EnemyType(
+            id=self.next_enemy_type_id,
+            name=name,
+            image_path=image_path,
+            image=image,
+            ai_type=ai_type,
+            health=health,
+            damage=damage,
+            speed=speed,
+            color=color
+        )
+        self.enemy_types[self.next_enemy_type_id] = enemy_type
+        self.next_enemy_type_id += 1
+        return enemy_type.id
+
+    def add_collectible_type(self, name: str, image_path: Optional[str], effect: str, value: int, color: Tuple[int, int, int]):
+        """Add a new collectible type"""
+        image = None
+        if image_path and os.path.exists(image_path):
+            try:
+                image = pygame.image.load(image_path)
+                image = pygame.transform.scale(image, (TILE_SIZE, TILE_SIZE))
+            except:
+                pass
+
+        collectible_type = CollectibleType(
+            id=self.next_collectible_type_id,
+            name=name,
+            image_path=image_path,
+            image=image,
+            effect=effect,
+            value=value,
+            color=color
+        )
+        self.collectible_types[self.next_collectible_type_id] = collectible_type
+        self.next_collectible_type_id += 1
+        return collectible_type.id
     
     def apply_input_text(self):
         """Apply text input to the property being edited"""
@@ -364,18 +545,39 @@ class TileEditor:
             self.handle_palette_click(pos)
         # Check if clicking in canvas
         elif self.canvas_rect.collidepoint(pos):
-            tile_pos = self.screen_to_tile(pos[0], pos[1])
-            if tile_pos:
-                self.drawing = True
-                self.draw_start_tile = tile_pos
-                
-                if self.current_tool == Tool.PENCIL:
-                    if self.current_tool == Tool.ERASER:
-                        self.erase_tile(*tile_pos)
-                    else:
+            if self.current_tab == EditorTab.TILES:
+                # Tile placement logic
+                tile_pos = self.screen_to_tile(pos[0], pos[1])
+                if tile_pos:
+                    self.drawing = True
+                    self.draw_start_tile = tile_pos
+
+                    if self.current_tool == Tool.PENCIL:
                         self.place_tile(*tile_pos)
-                elif self.current_tool == Tool.ERASER:
-                    self.erase_tile(*tile_pos)
+                    elif self.current_tool == Tool.ERASER:
+                        self.erase_tile(*tile_pos)
+
+            elif self.current_tab == EditorTab.ENEMIES:
+                # Enemy placement logic
+                if self.current_enemy_type_id is not None:
+                    world_x = pos[0] + self.camera_x
+                    world_y = pos[1] + self.camera_y
+                    # Snap to grid
+                    snap_x = (world_x // TILE_SIZE) * TILE_SIZE
+                    snap_y = (world_y // TILE_SIZE) * TILE_SIZE
+                    enemy = EnemyInstance(x=snap_x, y=snap_y, enemy_type_id=self.current_enemy_type_id)
+                    self.enemies.append(enemy)
+
+            else:  # OBJECTS tab
+                # Collectible placement logic
+                if self.current_collectible_type_id is not None:
+                    world_x = pos[0] + self.camera_x
+                    world_y = pos[1] + self.camera_y
+                    # Snap to grid
+                    snap_x = (world_x // TILE_SIZE) * TILE_SIZE
+                    snap_y = (world_y // TILE_SIZE) * TILE_SIZE
+                    collectible = CollectibleInstance(x=snap_x, y=snap_y, collectible_type_id=self.current_collectible_type_id)
+                    self.collectibles.append(collectible)
     
     def handle_left_release(self, pos):
         """Handle left mouse release"""
@@ -398,9 +600,29 @@ class TileEditor:
     def handle_right_click(self, pos):
         """Handle right mouse click"""
         if self.canvas_rect.collidepoint(pos):
-            tile_pos = self.screen_to_tile(pos[0], pos[1])
-            if tile_pos and tile_pos in self.tiles[self.current_layer]:
-                self.erase_tile(*tile_pos)
+            if self.current_tab == EditorTab.TILES:
+                tile_pos = self.screen_to_tile(pos[0], pos[1])
+                if tile_pos and tile_pos in self.tiles[self.current_layer]:
+                    self.erase_tile(*tile_pos)
+
+            elif self.current_tab == EditorTab.ENEMIES:
+                # Delete enemy at clicked position
+                world_x = pos[0] + self.camera_x
+                world_y = pos[1] + self.camera_y
+                # Find and remove enemy at this position (within TILE_SIZE range)
+                for i, enemy in enumerate(self.enemies):
+                    if abs(enemy.x - world_x) < TILE_SIZE and abs(enemy.y - world_y) < TILE_SIZE:
+                        self.enemies.pop(i)
+                        break
+
+            else:  # OBJECTS tab
+                # Delete collectible at clicked position
+                world_x = pos[0] + self.camera_x
+                world_y = pos[1] + self.camera_y
+                for i, collectible in enumerate(self.collectibles):
+                    if abs(collectible.x - world_x) < TILE_SIZE and abs(collectible.y - world_y) < TILE_SIZE:
+                        self.collectibles.pop(i)
+                        break
     
     def handle_mouse_motion(self, pos):
         """Handle mouse motion while drawing"""
@@ -438,89 +660,133 @@ class TileEditor:
                 self.input_active = False
                 # Fall through to handle normal palette clicks
                 return
-        
-        # Match y_offset calculation from draw_palette
-        y_offset = 10  # "Layers:"
-        y_offset += 25  # after "Layers:"
-        
-        # Check layer toggles (these are fixed at top, not scrolled)
-        layer_y = 35
-        for i, layer in enumerate(['background', 'main', 'foreground']):
-            checkbox_rect = pygame.Rect(self.palette_rect.x + 10, layer_y, 15, 15)
-            if checkbox_rect.collidepoint(pos):
-                self.layer_visibility[layer] = not self.layer_visibility[layer]
-                return
-            layer_y += 20
-        
-        y_offset += 60  # layer checkboxes (3 * 20)
-        y_offset += 10  # gap
-        y_offset += 20  # "Tool:"
-        y_offset += 20  # tool keys
-        y_offset += 20  # level size
-        
-        # Check resize buttons
-        resize_button_width = (self.palette_width - 30) // 2
-        wider_button = pygame.Rect(self.palette_rect.x + 10, y_offset, resize_button_width, 25)
-        narrower_button = pygame.Rect(self.palette_rect.x + 15 + resize_button_width, y_offset, resize_button_width, 25)
-        
-        if wider_button.collidepoint(pos):
-            self.level_width += 10
-            return
-        elif narrower_button.collidepoint(pos):
-            self.level_width = max(50, self.level_width - 10)
-            return
 
-        y_offset += 35  # gap after resize buttons (matches draw_palette)
-        
-        # Check plus button (fixed position, not scrolled)
+        # Check tab buttons
+        y_offset = 10
+        tab_width = (self.palette_width - 40) // 3
+        tab_x = self.palette_rect.x + 10
+
+        for i, tab in enumerate([EditorTab.TILES, EditorTab.ENEMIES, EditorTab.OBJECTS]):
+            tab_rect = pygame.Rect(tab_x + i * (tab_width + 5), y_offset, tab_width, 25)
+            if tab_rect.collidepoint(pos):
+                self.current_tab = tab
+                self.scroll_offset = 0  # Reset scroll when switching tabs
+                return
+
+        y_offset += 35
+
+        # Handle tile-specific controls
+        if self.current_tab == EditorTab.TILES:
+            y_offset += 25  # "Layers:" label
+
+            # Check layer toggles
+            layer_y = y_offset
+            for i, layer in enumerate(['background', 'main', 'foreground']):
+                checkbox_rect = pygame.Rect(self.palette_rect.x + 10, layer_y, 15, 15)
+                if checkbox_rect.collidepoint(pos):
+                    self.layer_visibility[layer] = not self.layer_visibility[layer]
+                    return
+                layer_y += 20
+
+            y_offset += 60  # layer checkboxes (3 * 20)
+            y_offset += 10  # gap
+            y_offset += 20  # "Tool:"
+            y_offset += 20  # tool keys
+            y_offset += 20  # level size
+
+            # Check resize buttons
+            resize_button_width = (self.palette_width - 30) // 2
+            wider_button = pygame.Rect(self.palette_rect.x + 10, y_offset, resize_button_width, 25)
+            narrower_button = pygame.Rect(self.palette_rect.x + 15 + resize_button_width, y_offset, resize_button_width, 25)
+
+            if wider_button.collidepoint(pos):
+                self.level_width += 10
+                return
+            elif narrower_button.collidepoint(pos):
+                self.level_width = max(50, self.level_width - 10)
+                return
+
+            y_offset += 35  # gap after resize buttons
+
+        # Check plus button (all tabs)
         plus_button_rect = pygame.Rect(self.palette_rect.x + 10, y_offset, self.palette_width - 20, 30)
-        
-        if plus_button_rect.collidepoint(pos):
-            # Add new tile
-            self.add_tile_type(f"New Tile {self.next_tile_id}", None, [TileProperty.SOLID.value], 
-                             (128, 128, 128))
-            return
-        
-        y_offset += 40  # gap after plus button
-        y_offset += 25  # "Tiles:" label
-        
-        # Tiles start here - this is tile_area_top in draw_palette
-        tile_area_top = y_offset
-        tile_area_height = SCREEN_HEIGHT - y_offset - 100  # Match draw_palette calculation
 
-        # Check tile selection and edit buttons (these ARE scrolled)
-        # Use the exact same calculation as draw_palette
-        tile_y = y_offset - self.scroll_offset
-        for tile_id, tile_type in self.tile_types.items():
-            # Skip if not visible (match draw_palette visibility check)
-            if tile_y + 60 < tile_area_top or tile_y > tile_area_top + tile_area_height:
-                tile_y += 70
-                continue
-            
-            tile_rect = pygame.Rect(self.palette_rect.x + 10, tile_y, self.palette_width - 20, 60)
-            
-            # Only process this tile if the click is within its rect
-            if not tile_rect.collidepoint(pos):
-                tile_y += 70
-                continue
-            
-            # Edit button - match exact position from draw
-            edit_button = pygame.Rect(tile_rect.x + tile_rect.width - 55, tile_rect.y + 5, 50, 20)
-            
-            if edit_button.collidepoint(pos):
-                # Open property editor
-                self.editing_tile_id = tile_id
-                self.show_property_editor = True
-                # Initialize checkboxes
-                self.property_checkboxes = {prop.value: prop.value in tile_type.properties 
-                                           for prop in TileProperty}
-                return
-            else:
-                # Clicked on tile but not edit button - select tile
-                self.current_tile_type_id = tile_id
-                return
-            
-            tile_y += 70
+        if plus_button_rect.collidepoint(pos):
+            if self.current_tab == EditorTab.TILES:
+                self.add_tile_type(f"New Tile {self.next_tile_id}", None, [TileProperty.SOLID.value], (128, 128, 128))
+            elif self.current_tab == EditorTab.ENEMIES:
+                new_id = self.add_enemy_type(f"New Enemy {self.next_enemy_type_id}", None, EnemyAI.PATROL.value, 3, 1, 1.5, (200, 100, 100))
+                self.current_enemy_type_id = new_id
+            else:  # OBJECTS
+                new_id = self.add_collectible_type(f"New Object {self.next_collectible_type_id}", None, CollectibleEffect.SCORE.value, 10, (255, 200, 0))
+                self.current_collectible_type_id = new_id
+            return
+
+        y_offset += 40  # gap after plus button
+        y_offset += 25  # section label
+
+        # Content area
+        content_area_top = y_offset
+        content_area_height = SCREEN_HEIGHT - y_offset - 100
+
+        # Handle clicks on content based on current tab
+        if self.current_tab == EditorTab.TILES:
+            item_y = y_offset - self.scroll_offset
+            for tile_id, tile_type in self.tile_types.items():
+                if item_y + 60 < content_area_top or item_y > content_area_top + content_area_height:
+                    item_y += 70
+                    continue
+
+                item_rect = pygame.Rect(self.palette_rect.x + 10, item_y, self.palette_width - 20, 60)
+
+                if not item_rect.collidepoint(pos):
+                    item_y += 70
+                    continue
+
+                # Edit button (only for tiles)
+                edit_button = pygame.Rect(item_rect.x + item_rect.width - 55, item_rect.y + 5, 50, 20)
+
+                if edit_button.collidepoint(pos):
+                    self.editing_tile_id = tile_id
+                    self.show_property_editor = True
+                    self.property_checkboxes = {prop.value: prop.value in tile_type.properties
+                                               for prop in TileProperty}
+                    return
+                else:
+                    self.current_tile_type_id = tile_id
+                    return
+
+                item_y += 70
+
+        elif self.current_tab == EditorTab.ENEMIES:
+            item_y = y_offset - self.scroll_offset
+            for enemy_id, enemy_type in self.enemy_types.items():
+                if item_y + 60 < content_area_top or item_y > content_area_top + content_area_height:
+                    item_y += 70
+                    continue
+
+                item_rect = pygame.Rect(self.palette_rect.x + 10, item_y, self.palette_width - 20, 60)
+
+                if item_rect.collidepoint(pos):
+                    self.current_enemy_type_id = enemy_id
+                    return
+
+                item_y += 70
+
+        else:  # OBJECTS tab
+            item_y = y_offset - self.scroll_offset
+            for collectible_id, collectible_type in self.collectible_types.items():
+                if item_y + 60 < content_area_top or item_y > content_area_top + content_area_height:
+                    item_y += 70
+                    continue
+
+                item_rect = pygame.Rect(self.palette_rect.x + 10, item_y, self.palette_width - 20, 60)
+
+                if item_rect.collidepoint(pos):
+                    self.current_collectible_type_id = collectible_id
+                    return
+
+                item_y += 70
     
     def handle_property_editor_click(self, pos):
         """Handle clicks in the property editor dialog"""
@@ -692,11 +958,46 @@ class TileEditor:
                         surf.fill(tile_type.color)
                         self.screen.blit(surf, (screen_x, screen_y))
         
+        # Draw enemies
+        for enemy in self.enemies:
+            screen_x = enemy.x - self.camera_x
+            screen_y = enemy.y - self.camera_y
+
+            # Only draw if visible
+            if -TILE_SIZE < screen_x < self.canvas_rect.width and -TILE_SIZE < screen_y < self.canvas_rect.height:
+                enemy_type = self.enemy_types.get(enemy.enemy_type_id)
+                if enemy_type:
+                    if enemy_type.image:
+                        self.screen.blit(enemy_type.image, (screen_x, screen_y))
+                    else:
+                        pygame.draw.rect(self.screen, enemy_type.color,
+                                       (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    # Draw border to indicate it's an enemy
+                    pygame.draw.rect(self.screen, RED, (screen_x, screen_y, TILE_SIZE, TILE_SIZE), 2)
+
+        # Draw collectibles
+        for collectible in self.collectibles:
+            screen_x = collectible.x - self.camera_x
+            screen_y = collectible.y - self.camera_y
+
+            # Only draw if visible
+            if -TILE_SIZE < screen_x < self.canvas_rect.width and -TILE_SIZE < screen_y < self.canvas_rect.height:
+                collectible_type = self.collectible_types.get(collectible.collectible_type_id)
+                if collectible_type:
+                    if collectible_type.image:
+                        self.screen.blit(collectible_type.image, (screen_x, screen_y))
+                    else:
+                        pygame.draw.circle(self.screen, collectible_type.color,
+                                         (screen_x + TILE_SIZE // 2, screen_y + TILE_SIZE // 2), TILE_SIZE // 2)
+                    # Draw border to indicate it's a collectible
+                    pygame.draw.circle(self.screen, YELLOW,
+                                     (screen_x + TILE_SIZE // 2, screen_y + TILE_SIZE // 2), TILE_SIZE // 2, 2)
+
         # Draw viewport indicator (1280x720 area)
         viewport_x = -self.camera_x
         viewport_y = -self.camera_y
         pygame.draw.rect(self.screen, YELLOW, (viewport_x, viewport_y, VIEWPORT_WIDTH, VIEWPORT_HEIGHT), 2)
-        
+
         # Draw minimap
         self.draw_minimap()
     
@@ -747,137 +1048,257 @@ class TileEditor:
         """Draw the tile palette"""
         # Background
         self.screen.fill(LIGHT_GRAY, self.palette_rect)
-        pygame.draw.line(self.screen, BLACK, (self.palette_rect.x, 0), 
+        pygame.draw.line(self.screen, BLACK, (self.palette_rect.x, 0),
                         (self.palette_rect.x, SCREEN_HEIGHT), 2)
-        
-        # Layer toggles (fixed at top)
+
+        # Tab buttons
         y_offset = 10
-        text = self.font.render("Layers:", True, BLACK)
-        self.screen.blit(text, (self.palette_rect.x + 10, y_offset))
-        y_offset += 25
-        
-        for layer in ['background', 'main', 'foreground']:
-            # Checkbox
-            checkbox_rect = pygame.Rect(self.palette_rect.x + 10, y_offset, 15, 15)
-            pygame.draw.rect(self.screen, WHITE, checkbox_rect)
-            pygame.draw.rect(self.screen, BLACK, checkbox_rect, 1)
-            if self.layer_visibility[layer]:
-                pygame.draw.line(self.screen, BLACK, checkbox_rect.topleft, checkbox_rect.bottomright, 2)
-                pygame.draw.line(self.screen, BLACK, checkbox_rect.topright, checkbox_rect.bottomleft, 2)
-            
-            # Label
-            color = BLACK if layer == self.current_layer else DARK_GRAY
-            text = self.small_font.render(layer.title(), True, color)
-            self.screen.blit(text, (self.palette_rect.x + 30, y_offset))
-            y_offset += 20
-        
-        y_offset += 10
-        
-        # Tool selection
-        text = self.font.render(f"Tool: {self.current_tool.value.title()}", True, BLACK)
-        self.screen.blit(text, (self.palette_rect.x + 10, y_offset))
-        y_offset += 20
-        
-        text = self.small_font.render("P:Pencil R:Rect L:Line E:Erase", True, DARK_GRAY)
-        self.screen.blit(text, (self.palette_rect.x + 10, y_offset))
-        y_offset += 20
-        
-        # Level size controls
-        text = self.small_font.render(f"Level: {self.level_width}x{self.level_height}", True, BLACK)
-        self.screen.blit(text, (self.palette_rect.x + 10, y_offset))
-        y_offset += 20
-        
-        # Resize buttons
-        resize_button_width = (self.palette_width - 30) // 2
-        wider_button = pygame.Rect(self.palette_rect.x + 10, y_offset, resize_button_width, 25)
-        narrower_button = pygame.Rect(self.palette_rect.x + 15 + resize_button_width, y_offset, resize_button_width, 25)
-        
-        pygame.draw.rect(self.screen, GREEN, wider_button)
-        pygame.draw.rect(self.screen, BLACK, wider_button, 1)
-        pygame.draw.rect(self.screen, RED, narrower_button)
-        pygame.draw.rect(self.screen, BLACK, narrower_button, 1)
-        
-        wider_text = self.small_font.render("Wider", True, BLACK)
-        narrower_text = self.small_font.render("Narrower", True, BLACK)
-        self.screen.blit(wider_text, (wider_button.x + 15, wider_button.y + 5))
-        self.screen.blit(narrower_text, (narrower_button.x + 5, narrower_button.y + 5))
-        
+        tab_width = (self.palette_width - 40) // 3
+        tab_x = self.palette_rect.x + 10
+
+        for i, tab in enumerate([EditorTab.TILES, EditorTab.ENEMIES, EditorTab.OBJECTS]):
+            tab_rect = pygame.Rect(tab_x + i * (tab_width + 5), y_offset, tab_width, 25)
+
+            # Draw button
+            if self.current_tab == tab:
+                pygame.draw.rect(self.screen, BLUE, tab_rect)
+            else:
+                pygame.draw.rect(self.screen, WHITE, tab_rect)
+            pygame.draw.rect(self.screen, BLACK, tab_rect, 2)
+
+            # Draw text
+            tab_text = self.small_font.render(tab.value.title(), True, BLACK)
+            text_rect = tab_text.get_rect(center=tab_rect.center)
+            self.screen.blit(tab_text, text_rect)
+
         y_offset += 35
+
+        # Only show layer toggles for tiles tab
+        if self.current_tab == EditorTab.TILES:
+            text = self.font.render("Layers:", True, BLACK)
+            self.screen.blit(text, (self.palette_rect.x + 10, y_offset))
+            y_offset += 25
+
+            for layer in ['background', 'main', 'foreground']:
+                # Checkbox
+                checkbox_rect = pygame.Rect(self.palette_rect.x + 10, y_offset, 15, 15)
+                pygame.draw.rect(self.screen, WHITE, checkbox_rect)
+                pygame.draw.rect(self.screen, BLACK, checkbox_rect, 1)
+                if self.layer_visibility[layer]:
+                    pygame.draw.line(self.screen, BLACK, checkbox_rect.topleft, checkbox_rect.bottomright, 2)
+                    pygame.draw.line(self.screen, BLACK, checkbox_rect.topright, checkbox_rect.bottomleft, 2)
+
+                # Label
+                color = BLACK if layer == self.current_layer else DARK_GRAY
+                text = self.small_font.render(layer.title(), True, color)
+                self.screen.blit(text, (self.palette_rect.x + 30, y_offset))
+                y_offset += 20
+
+            y_offset += 10
+
+        # Tool selection (only for tiles)
+        if self.current_tab == EditorTab.TILES:
+            text = self.font.render(f"Tool: {self.current_tool.value.title()}", True, BLACK)
+            self.screen.blit(text, (self.palette_rect.x + 10, y_offset))
+            y_offset += 20
+
+            text = self.small_font.render("P:Pencil R:Rect L:Line E:Erase", True, DARK_GRAY)
+            self.screen.blit(text, (self.palette_rect.x + 10, y_offset))
+            y_offset += 20
+
+            # Level size controls
+            text = self.small_font.render(f"Level: {self.level_width}x{self.level_height}", True, BLACK)
+            self.screen.blit(text, (self.palette_rect.x + 10, y_offset))
+            y_offset += 20
+
+            # Resize buttons
+            resize_button_width = (self.palette_width - 30) // 2
+            wider_button = pygame.Rect(self.palette_rect.x + 10, y_offset, resize_button_width, 25)
+            narrower_button = pygame.Rect(self.palette_rect.x + 15 + resize_button_width, y_offset, resize_button_width, 25)
+
+            pygame.draw.rect(self.screen, GREEN, wider_button)
+            pygame.draw.rect(self.screen, BLACK, wider_button, 1)
+            pygame.draw.rect(self.screen, RED, narrower_button)
+            pygame.draw.rect(self.screen, BLACK, narrower_button, 1)
+
+            wider_text = self.small_font.render("Wider", True, BLACK)
+            narrower_text = self.small_font.render("Narrower", True, BLACK)
+            self.screen.blit(wider_text, (wider_button.x + 15, wider_button.y + 5))
+            self.screen.blit(narrower_text, (narrower_button.x + 5, narrower_button.y + 5))
+
+            y_offset += 35
         
-        # Plus button to add new tiles
+        # Plus button to add new items
         plus_button = pygame.Rect(self.palette_rect.x + 10, y_offset, self.palette_width - 20, 30)
         pygame.draw.rect(self.screen, GREEN, plus_button)
         pygame.draw.rect(self.screen, BLACK, plus_button, 2)
-        plus_text = self.font.render("+ Add New Tile", True, BLACK)
+
+        if self.current_tab == EditorTab.TILES:
+            plus_text = self.font.render("+ Add New Tile", True, BLACK)
+        elif self.current_tab == EditorTab.ENEMIES:
+            plus_text = self.font.render("+ Add New Enemy", True, BLACK)
+        else:  # OBJECTS
+            plus_text = self.font.render("+ Add New Object", True, BLACK)
+
         text_rect = plus_text.get_rect(center=plus_button.center)
         self.screen.blit(plus_text, text_rect)
-        
+
         y_offset += 40
-        
-        # Tiles section header
-        text = self.font.render("Tiles:", True, BLACK)
+
+        # Section header
+        if self.current_tab == EditorTab.TILES:
+            text = self.font.render("Tiles:", True, BLACK)
+        elif self.current_tab == EditorTab.ENEMIES:
+            text = self.font.render("Enemy Types:", True, BLACK)
+        else:  # OBJECTS
+            text = self.font.render("Collectibles:", True, BLACK)
+
         self.screen.blit(text, (self.palette_rect.x + 10, y_offset))
         y_offset += 25
         
         # Create clip rect for scrollable area
-        tile_area_top = y_offset
-        tile_area_height = SCREEN_HEIGHT - y_offset - 100  # Leave room for instructions
-        
-        # Draw border around tile area
-        tile_area_rect = pygame.Rect(self.palette_rect.x, tile_area_top, self.palette_width, tile_area_height)
-        pygame.draw.rect(self.screen, DARK_GRAY, tile_area_rect, 2)
-        
+        content_area_top = y_offset
+        content_area_height = SCREEN_HEIGHT - y_offset - 100  # Leave room for instructions
+
+        # Draw border around content area
+        content_area_rect = pygame.Rect(self.palette_rect.x, content_area_top, self.palette_width, content_area_height)
+        pygame.draw.rect(self.screen, DARK_GRAY, content_area_rect, 2)
+
         # Set clipping rectangle to prevent overflow
-        clip_rect = pygame.Rect(self.palette_rect.x, tile_area_top, self.palette_width, tile_area_height)
+        clip_rect = pygame.Rect(self.palette_rect.x, content_area_top, self.palette_width, content_area_height)
         self.screen.set_clip(clip_rect)
-        
-        # Calculate total height needed
-        total_tiles_height = len(self.tile_types) * 70
-        self.max_scroll = max(0, total_tiles_height - tile_area_height)
-        
-        # Draw tiles (scrollable)
-        tile_y = y_offset - self.scroll_offset
-        for tile_id, tile_type in self.tile_types.items():
-            # Only draw if visible in clip area
-            if tile_y + 60 < tile_area_top or tile_y > tile_area_top + tile_area_height:
-                tile_y += 70
-                continue
-            
-            # Tile preview
-            tile_rect = pygame.Rect(self.palette_rect.x + 10, tile_y, self.palette_width - 20, 60)
-            
-            # Highlight if selected
-            if tile_id == self.current_tile_type_id:
-                pygame.draw.rect(self.screen, BLUE, tile_rect, 3)
-            else:
-                pygame.draw.rect(self.screen, DARK_GRAY, tile_rect, 1)
-            
-            # Draw tile preview
-            preview_rect = pygame.Rect(tile_rect.x + 5, tile_rect.y + 5, 32, 32)
-            if tile_type.image:
-                scaled_img = pygame.transform.scale(tile_type.image, (32, 32))
-                self.screen.blit(scaled_img, preview_rect.topleft)
-            else:
-                pygame.draw.rect(self.screen, tile_type.color, preview_rect)
-            pygame.draw.rect(self.screen, BLACK, preview_rect, 1)
-            
-            # Name
-            name_text = self.small_font.render(tile_type.name[:15], True, BLACK)
-            self.screen.blit(name_text, (tile_rect.x + 45, tile_rect.y + 5))
-            
-            # Properties
-            props_text = self.small_font.render(", ".join(tile_type.properties[:2]), True, DARK_GRAY)
-            self.screen.blit(props_text, (tile_rect.x + 45, tile_rect.y + 25))
-            
-            # Edit button
-            edit_button = pygame.Rect(tile_rect.x + tile_rect.width - 55, tile_rect.y + 5, 50, 20)
-            pygame.draw.rect(self.screen, YELLOW, edit_button)
-            pygame.draw.rect(self.screen, BLACK, edit_button, 1)
-            edit_text = self.small_font.render("Edit", True, BLACK)
-            self.screen.blit(edit_text, (edit_button.x + 10, edit_button.y + 2))
-            
-            tile_y += 70
-        
+
+        # Draw content based on current tab
+        if self.current_tab == EditorTab.TILES:
+            # Calculate total height needed
+            total_height = len(self.tile_types) * 70
+            self.max_scroll = max(0, total_height - content_area_height)
+
+            # Draw tiles (scrollable)
+            item_y = y_offset - self.scroll_offset
+            for tile_id, tile_type in self.tile_types.items():
+                # Only draw if visible in clip area
+                if item_y + 60 < content_area_top or item_y > content_area_top + content_area_height:
+                    item_y += 70
+                    continue
+
+                # Tile preview
+                item_rect = pygame.Rect(self.palette_rect.x + 10, item_y, self.palette_width - 20, 60)
+
+                # Highlight if selected
+                if tile_id == self.current_tile_type_id:
+                    pygame.draw.rect(self.screen, BLUE, item_rect, 3)
+                else:
+                    pygame.draw.rect(self.screen, DARK_GRAY, item_rect, 1)
+
+                # Draw tile preview
+                preview_rect = pygame.Rect(item_rect.x + 5, item_rect.y + 5, 32, 32)
+                if tile_type.image:
+                    scaled_img = pygame.transform.scale(tile_type.image, (32, 32))
+                    self.screen.blit(scaled_img, preview_rect.topleft)
+                else:
+                    pygame.draw.rect(self.screen, tile_type.color, preview_rect)
+                pygame.draw.rect(self.screen, BLACK, preview_rect, 1)
+
+                # Name
+                name_text = self.small_font.render(tile_type.name[:15], True, BLACK)
+                self.screen.blit(name_text, (item_rect.x + 45, item_rect.y + 5))
+
+                # Properties
+                props_text = self.small_font.render(", ".join(tile_type.properties[:2]), True, DARK_GRAY)
+                self.screen.blit(props_text, (item_rect.x + 45, item_rect.y + 25))
+
+                # Edit button
+                edit_button = pygame.Rect(item_rect.x + item_rect.width - 55, item_rect.y + 5, 50, 20)
+                pygame.draw.rect(self.screen, YELLOW, edit_button)
+                pygame.draw.rect(self.screen, BLACK, edit_button, 1)
+                edit_text = self.small_font.render("Edit", True, BLACK)
+                self.screen.blit(edit_text, (edit_button.x + 10, edit_button.y + 2))
+
+                item_y += 70
+
+        elif self.current_tab == EditorTab.ENEMIES:
+            # Calculate total height needed
+            total_height = len(self.enemy_types) * 70
+            self.max_scroll = max(0, total_height - content_area_height)
+
+            # Draw enemy types (scrollable)
+            item_y = y_offset - self.scroll_offset
+            for enemy_id, enemy_type in self.enemy_types.items():
+                # Only draw if visible
+                if item_y + 60 < content_area_top or item_y > content_area_top + content_area_height:
+                    item_y += 70
+                    continue
+
+                item_rect = pygame.Rect(self.palette_rect.x + 10, item_y, self.palette_width - 20, 60)
+
+                # Highlight if selected
+                if enemy_id == self.current_enemy_type_id:
+                    pygame.draw.rect(self.screen, BLUE, item_rect, 3)
+                else:
+                    pygame.draw.rect(self.screen, DARK_GRAY, item_rect, 1)
+
+                # Draw enemy preview
+                preview_rect = pygame.Rect(item_rect.x + 5, item_rect.y + 5, 32, 32)
+                if enemy_type.image:
+                    scaled_img = pygame.transform.scale(enemy_type.image, (32, 32))
+                    self.screen.blit(scaled_img, preview_rect.topleft)
+                else:
+                    pygame.draw.rect(self.screen, enemy_type.color, preview_rect)
+                pygame.draw.rect(self.screen, BLACK, preview_rect, 1)
+
+                # Name
+                name_text = self.small_font.render(enemy_type.name[:15], True, BLACK)
+                self.screen.blit(name_text, (item_rect.x + 45, item_rect.y + 5))
+
+                # Stats
+                stats_text = self.small_font.render(f"HP:{enemy_type.health} DMG:{enemy_type.damage}", True, DARK_GRAY)
+                self.screen.blit(stats_text, (item_rect.x + 45, item_rect.y + 25))
+
+                item_y += 70
+
+        else:  # OBJECTS tab
+            # Calculate total height needed
+            total_height = len(self.collectible_types) * 70
+            self.max_scroll = max(0, total_height - content_area_height)
+
+            # Draw collectible types (scrollable)
+            item_y = y_offset - self.scroll_offset
+            for collectible_id, collectible_type in self.collectible_types.items():
+                # Only draw if visible
+                if item_y + 60 < content_area_top or item_y > content_area_top + content_area_height:
+                    item_y += 70
+                    continue
+
+                item_rect = pygame.Rect(self.palette_rect.x + 10, item_y, self.palette_width - 20, 60)
+
+                # Highlight if selected
+                if collectible_id == self.current_collectible_type_id:
+                    pygame.draw.rect(self.screen, BLUE, item_rect, 3)
+                else:
+                    pygame.draw.rect(self.screen, DARK_GRAY, item_rect, 1)
+
+                # Draw collectible preview
+                preview_rect = pygame.Rect(item_rect.x + 5, item_rect.y + 5, 32, 32)
+                if collectible_type.image:
+                    scaled_img = pygame.transform.scale(collectible_type.image, (32, 32))
+                    self.screen.blit(scaled_img, preview_rect.topleft)
+                else:
+                    # Draw circle for collectibles
+                    pygame.draw.circle(self.screen, collectible_type.color,
+                                     (preview_rect.centerx, preview_rect.centery), 14)
+                pygame.draw.rect(self.screen, BLACK, preview_rect, 1)
+
+                # Name
+                name_text = self.small_font.render(collectible_type.name[:15], True, BLACK)
+                self.screen.blit(name_text, (item_rect.x + 45, item_rect.y + 5))
+
+                # Effect
+                effect_text = self.small_font.render(f"{collectible_type.effect}: +{collectible_type.value}", True, DARK_GRAY)
+                self.screen.blit(effect_text, (item_rect.x + 45, item_rect.y + 25))
+
+                item_y += 70
+
         # Reset clipping
         self.screen.set_clip(None)
         
@@ -1008,9 +1429,13 @@ class TileEditor:
             'layers': {
                 layer: {f"{x},{y}": tile.to_dict() for (x, y), tile in tiles.items()}
                 for layer, tiles in self.tiles.items()
-            }
+            },
+            'enemy_types': {eid: etype.to_dict() for eid, etype in self.enemy_types.items()},
+            'enemies': [enemy.to_dict() for enemy in self.enemies],
+            'collectible_types': {cid: ctype.to_dict() for cid, ctype in self.collectible_types.items()},
+            'collectibles': [collectible.to_dict() for collectible in self.collectibles]
         }
-        
+
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
         print(f"Level saved to {filename}")
@@ -1020,13 +1445,13 @@ class TileEditor:
         if not os.path.exists(filename):
             print(f"File {filename} not found")
             return
-        
+
         with open(filename, 'r') as f:
             data = json.load(f)
-        
+
         self.level_width = data['width']
         self.level_height = data['height']
-        
+
         # Load tile types
         self.tile_types = {}
         for tid_str, ttype_data in data['tile_types'].items():
@@ -1038,7 +1463,7 @@ class TileEditor:
                     image = pygame.transform.scale(image, (TILE_SIZE, TILE_SIZE))
                 except:
                     pass
-            
+
             self.tile_types[tid] = TileType(
                 id=tid,
                 name=ttype_data['name'],
@@ -1048,7 +1473,7 @@ class TileEditor:
                 color=tuple(ttype_data['color'])
             )
             self.next_tile_id = max(self.next_tile_id, tid + 1)
-        
+
         # Load tiles
         self.tiles = {'background': {}, 'main': {}, 'foreground': {}}
         for layer, tiles_data in data['layers'].items():
@@ -1058,7 +1483,78 @@ class TileEditor:
                     tile_type_id=tile_data['tile_type_id'],
                     layer=tile_data['layer']
                 )
-        
+
+        # Load enemy types
+        self.enemy_types = {}
+        if 'enemy_types' in data:
+            for eid_str, etype_data in data['enemy_types'].items():
+                eid = int(eid_str)
+                image = None
+                if etype_data['image_path'] and os.path.exists(etype_data['image_path']):
+                    try:
+                        image = pygame.image.load(etype_data['image_path'])
+                        image = pygame.transform.scale(image, (TILE_SIZE, TILE_SIZE))
+                    except:
+                        pass
+
+                self.enemy_types[eid] = EnemyType(
+                    id=eid,
+                    name=etype_data['name'],
+                    image_path=etype_data['image_path'],
+                    image=image,
+                    ai_type=etype_data['ai_type'],
+                    health=etype_data['health'],
+                    damage=etype_data['damage'],
+                    speed=etype_data['speed'],
+                    color=tuple(etype_data['color'])
+                )
+                self.next_enemy_type_id = max(self.next_enemy_type_id, eid + 1)
+
+        # Load enemies
+        self.enemies = []
+        if 'enemies' in data:
+            for enemy_data in data['enemies']:
+                self.enemies.append(EnemyInstance(
+                    x=enemy_data['x'],
+                    y=enemy_data['y'],
+                    enemy_type_id=enemy_data['enemy_type_id'],
+                    patrol_range=enemy_data.get('patrol_range', 100)
+                ))
+
+        # Load collectible types
+        self.collectible_types = {}
+        if 'collectible_types' in data:
+            for cid_str, ctype_data in data['collectible_types'].items():
+                cid = int(cid_str)
+                image = None
+                if ctype_data['image_path'] and os.path.exists(ctype_data['image_path']):
+                    try:
+                        image = pygame.image.load(ctype_data['image_path'])
+                        image = pygame.transform.scale(image, (TILE_SIZE, TILE_SIZE))
+                    except:
+                        pass
+
+                self.collectible_types[cid] = CollectibleType(
+                    id=cid,
+                    name=ctype_data['name'],
+                    image_path=ctype_data['image_path'],
+                    image=image,
+                    effect=ctype_data['effect'],
+                    value=ctype_data['value'],
+                    color=tuple(ctype_data['color'])
+                )
+                self.next_collectible_type_id = max(self.next_collectible_type_id, cid + 1)
+
+        # Load collectibles
+        self.collectibles = []
+        if 'collectibles' in data:
+            for collectible_data in data['collectibles']:
+                self.collectibles.append(CollectibleInstance(
+                    x=collectible_data['x'],
+                    y=collectible_data['y'],
+                    collectible_type_id=collectible_data['collectible_type_id']
+                ))
+
         print(f"Level loaded from {filename}")
     
     def run(self):
