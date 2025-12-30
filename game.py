@@ -19,8 +19,9 @@ GRAVITY = 0.5
 MAX_FALL_SPEED = 10
 # Fraction of the viewport height where the player's feet sit within the view.
 CAMERA_VERTICAL_TRIGGER_FRACTION = 0.8
-# Fraction of the viewport height used as a vertical deadzone around the target.
-CAMERA_VERTICAL_DEADZONE_FRACTION = 0.08
+# Fractional deadzone above/below the trigger where the camera does not move.
+CAMERA_VERTICAL_DEADZONE_UP_FRACTION = 0.08
+CAMERA_VERTICAL_DEADZONE_DOWN_FRACTION = 0.08
 
 # Colors
 WHITE = (255, 255, 255)
@@ -1181,14 +1182,15 @@ class Game:
         target_x = self.player.x + self.player.width // 2 - viewport_width // 2
         target_y = self.camera_y
         player_feet_y = self.player.y + self.player.height
-        desired_y = player_feet_y - (viewport_height * CAMERA_VERTICAL_TRIGGER_FRACTION)
-        deadzone = viewport_height * CAMERA_VERTICAL_DEADZONE_FRACTION
-        lower_bound = desired_y - deadzone
-        upper_bound = desired_y + deadzone
-        if self.camera_y < lower_bound:
-            target_y = lower_bound
-        elif self.camera_y > upper_bound:
-            target_y = upper_bound
+        player_feet_screen_y = player_feet_y - self.camera_y
+        min_fraction = max(0.0, CAMERA_VERTICAL_TRIGGER_FRACTION - CAMERA_VERTICAL_DEADZONE_UP_FRACTION)
+        max_fraction = min(1.0, CAMERA_VERTICAL_TRIGGER_FRACTION + CAMERA_VERTICAL_DEADZONE_DOWN_FRACTION)
+        min_screen_y = viewport_height * min_fraction
+        max_screen_y = viewport_height * max_fraction
+        if player_feet_screen_y < min_screen_y:
+            target_y = player_feet_y - min_screen_y
+        elif player_feet_screen_y > max_screen_y:
+            target_y = player_feet_y - max_screen_y
 
         # Clamp camera to level bounds
         max_camera_x = max(0, self.level.width * TILE_SIZE - viewport_width)
