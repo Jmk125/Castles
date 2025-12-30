@@ -303,6 +303,19 @@ class TileEditor:
         self.input_text = ""
         self.input_active = False
         self.input_field = None  # 'name', 'color', 'health', 'damage', 'speed', 'value', etc.
+
+        # Viewport settings (for game camera preview)
+        self.viewport_width = VIEWPORT_WIDTH
+        self.viewport_height = VIEWPORT_HEIGHT
+        self.viewport_x = 0  # Position in world coordinates
+        self.viewport_y = 0
+        self.dragging_viewport = False
+        self.resizing_viewport = False
+        self.viewport_drag_start = None
+        self.viewport_resize_start = None
+
+        # Auto-load last saved level
+        self._load_last_level()
         
     def _create_placeholder_tiles(self):
         """Create starter placeholder tiles"""
@@ -348,7 +361,30 @@ class TileEditor:
 
         # Power Up
         self.add_collectible_type("Power Up", None, CollectibleEffect.POWERUP.value, 1, PURPLE)
-        
+
+    def _load_last_level(self):
+        """Load the last saved level if config exists"""
+        config_file = ".last_level.json"
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                    last_file = config.get('last_file')
+                    if last_file and os.path.exists(last_file):
+                        print(f"Auto-loading last level: {last_file}")
+                        self.load_level(last_file)
+            except Exception as e:
+                print(f"Failed to load last level: {e}")
+
+    def _save_last_level_config(self, filename: str):
+        """Save the last level filename to config"""
+        config_file = ".last_level.json"
+        try:
+            with open(config_file, 'w') as f:
+                json.dump({'last_file': filename}, f)
+        except Exception as e:
+            print(f"Failed to save config: {e}")
+
     def add_tile_type(self, name: str, image_path: Optional[str], properties: List[str], color: Tuple[int, int, int]):
         """Add a new tile type"""
         image = None
@@ -640,7 +676,24 @@ class TileEditor:
                     self.dragging_camera = False
             
             elif event.type == pygame.MOUSEMOTION:
-                if self.resizing_background and self.resize_start_pos:
+                if self.dragging_viewport and self.viewport_drag_start:
+                    # Drag viewport
+                    dx = event.pos[0] - self.viewport_drag_start[0]
+                    dy = event.pos[1] - self.viewport_drag_start[1]
+                    self.viewport_x += dx
+                    self.viewport_y += dy
+                    # Clamp to level boundaries
+                    self.viewport_x = max(0, min(self.viewport_x, self.level_width * TILE_SIZE - self.viewport_width))
+                    self.viewport_y = max(0, min(self.viewport_y, self.level_height * TILE_SIZE - self.viewport_height))
+                    self.viewport_drag_start = event.pos
+                elif self.resizing_viewport and self.viewport_resize_start:
+                    # Resize viewport
+                    dx = event.pos[0] - self.viewport_resize_start[0]
+                    dy = event.pos[1] - self.viewport_resize_start[1]
+                    self.viewport_width = max(100, self.viewport_width + dx)
+                    self.viewport_height = max(100, self.viewport_height + dy)
+                    self.viewport_resize_start = event.pos
+                elif self.resizing_background and self.resize_start_pos:
                     # Resize background image
                     dx = event.pos[0] - self.resize_start_pos[0]
                     dy = event.pos[1] - self.resize_start_pos[1]
@@ -661,6 +714,27 @@ class TileEditor:
     
     def handle_left_click(self, pos):
         """Handle left mouse click"""
+        # Check if clicking on viewport resize handle (in canvas area)
+        if self.canvas_rect.collidepoint(pos):
+            viewport_screen_x = self.viewport_x - self.camera_x
+            viewport_screen_y = self.viewport_y - self.camera_y
+            handle_size = 8
+            handle_x = viewport_screen_x + self.viewport_width - handle_size
+            handle_y = viewport_screen_y + self.viewport_height - handle_size
+            handle_rect = pygame.Rect(handle_x, handle_y, handle_size, handle_size)
+
+            if handle_rect.collidepoint(pos):
+                self.resizing_viewport = True
+                self.viewport_resize_start = pos
+                return
+
+            # Check if clicking on viewport rectangle (for dragging)
+            viewport_rect = pygame.Rect(viewport_screen_x, viewport_screen_y, self.viewport_width, self.viewport_height)
+            if viewport_rect.collidepoint(pos):
+                self.dragging_viewport = True
+                self.viewport_drag_start = pos
+                return
+
         # Check if clicking on background resize handle
         if self.background_image and self.background_width > 0 and self.background_height > 0:
             handle_size = 10
@@ -747,6 +821,17 @@ class TileEditor:
     
     def handle_left_release(self, pos):
         """Handle left mouse release"""
+        # Stop dragging/resizing viewport
+        if self.dragging_viewport:
+            self.dragging_viewport = False
+            self.viewport_drag_start = None
+            return
+
+        if self.resizing_viewport:
+            self.resizing_viewport = False
+            self.viewport_resize_start = None
+            return
+
         # Stop resizing background (legacy)
         if self.resizing_background:
             self.resizing_background = False
@@ -1486,10 +1571,16 @@ class TileEditor:
                     pygame.draw.circle(self.screen, YELLOW,
                                      (screen_x + TILE_SIZE // 2, screen_y + TILE_SIZE // 2), TILE_SIZE // 2, 2)
 
-        # Draw viewport indicator (1280x720 area)
-        viewport_x = -self.camera_x
-        viewport_y = -self.camera_y
-        pygame.draw.rect(self.screen, YELLOW, (viewport_x, viewport_y, VIEWPORT_WIDTH, VIEWPORT_HEIGHT), 2)
+        # Draw viewport indicator (game camera preview)
+        viewport_screen_x = self.viewport_x - self.camera_x
+        viewport_screen_y = self.viewport_y - self.camera_y
+        pygame.draw.rect(self.screen, YELLOW, (viewport_screen_x, viewport_screen_y, self.viewport_width, self.viewport_height), 2)
+
+        # Draw resize handle for viewport
+        handle_size = 8
+        handle_x = viewport_screen_x + self.viewport_width - handle_size
+        handle_y = viewport_screen_y + self.viewport_height - handle_size
+        pygame.draw.rect(self.screen, YELLOW, (handle_x, handle_y, handle_size, handle_size))
 
         # Draw minimap
         self.draw_minimap()
@@ -1531,11 +1622,11 @@ class TileEditor:
         pygame.draw.rect(self.screen, RED, (cam_x, cam_y, cam_w, cam_h), 1)
         
         # Draw viewport indicator
-        viewport_x = minimap_x + int(self.camera_x * scale_x)
-        viewport_y = minimap_y + int(self.camera_y * scale_y)
-        viewport_w = int(VIEWPORT_WIDTH * scale_x)
-        viewport_h = int(VIEWPORT_HEIGHT * scale_y)
-        pygame.draw.rect(self.screen, YELLOW, (viewport_x, viewport_y, viewport_w, viewport_h), 1)
+        viewport_minimap_x = minimap_x + int(self.viewport_x * scale_x)
+        viewport_minimap_y = minimap_y + int(self.viewport_y * scale_y)
+        viewport_w = int(self.viewport_width * scale_x)
+        viewport_h = int(self.viewport_height * scale_y)
+        pygame.draw.rect(self.screen, YELLOW, (viewport_minimap_x, viewport_minimap_y, viewport_w, viewport_h), 1)
     
     def draw_palette(self):
         """Draw the tile palette"""
@@ -2522,12 +2613,21 @@ class TileEditor:
                 'width': self.background_width,
                 'height': self.background_height
             } if self.background_image_path else None,
-            'background_layers': [bg_img.to_dict() for bg_img in self.background_layers]
+            'background_layers': [bg_img.to_dict() for bg_img in self.background_layers],
+            'viewport': {
+                'x': self.viewport_x,
+                'y': self.viewport_y,
+                'width': self.viewport_width,
+                'height': self.viewport_height
+            }
         }
 
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
         print(f"Level saved to {filename}")
+
+        # Save this as the last level
+        self._save_last_level_config(filename)
     
     def load_level(self, filename: str):
         """Load a level from JSON"""
@@ -2697,6 +2797,20 @@ class TileEditor:
                         repeat_y=bg_data.get('repeat_y', False)
                     )
                     self.background_layers.append(bg_img)
+
+        # Load viewport settings
+        if 'viewport' in data:
+            viewport_data = data['viewport']
+            self.viewport_x = viewport_data.get('x', 0)
+            self.viewport_y = viewport_data.get('y', 0)
+            self.viewport_width = viewport_data.get('width', VIEWPORT_WIDTH)
+            self.viewport_height = viewport_data.get('height', VIEWPORT_HEIGHT)
+        else:
+            # Reset to defaults if not in data
+            self.viewport_x = 0
+            self.viewport_y = 0
+            self.viewport_width = VIEWPORT_WIDTH
+            self.viewport_height = VIEWPORT_HEIGHT
 
         print(f"Level loaded from {filename}")
     
