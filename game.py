@@ -634,10 +634,14 @@ class Game:
         # Camera
         self.camera_x = 0
         self.camera_y = 0
-        
+
+        # Game state
+        self.game_over = False
+
         # Font for UI
         self.font = pygame.font.Font(None, 24)
         self.small_font = pygame.font.Font(None, 18)
+        self.large_font = pygame.font.Font(None, 48)
     
     def load_all_levels(self):
         """Load all level JSON files from current directory"""
@@ -743,6 +747,33 @@ class Game:
         self.player.y = 100
         self.player.health = self.player.max_health
 
+    def check_player_death(self):
+        """Check if player is dead"""
+        if self.player.health <= 0:
+            self.game_over = True
+
+    def draw_game_over(self):
+        """Draw game over screen"""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.set_alpha(200)
+        overlay.fill(BLACK)
+        self.screen.blit(overlay, (0, 0))
+
+        # Game Over text
+        game_over_text = self.large_font.render("GAME OVER", True, RED)
+        text_rect = game_over_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50))
+        self.screen.blit(game_over_text, text_rect)
+
+        # Instructions
+        restart_text = self.font.render("Press R to Restart", True, WHITE)
+        restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 20))
+        self.screen.blit(restart_text, restart_rect)
+
+        quit_text = self.font.render("Press ESC to Quit", True, WHITE)
+        quit_rect = quit_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50))
+        self.screen.blit(quit_text, quit_rect)
+
     def draw_ui(self):
         """Draw UI elements"""
         # Health bar
@@ -803,7 +834,10 @@ class Game:
     
     def restart_level(self):
         """Restart current level"""
+        # Reload the current level
+        self.level = Level(self.level.filename)
         self.player = Player(100, 100)
+        self.game_over = False
         print("Level restarted")
     
     def handle_events(self):
@@ -824,31 +858,39 @@ class Game:
         while self.running:
             self.handle_events()
 
-            # Get input
-            keys = pygame.key.get_pressed()
+            if not self.game_over:
+                # Get input
+                keys = pygame.key.get_pressed()
 
-            # Update
-            self.player.update(keys, self.level)
+                # Update
+                self.player.update(keys, self.level)
 
-            # Update enemies
-            for enemy in self.level.enemies:
-                enemy.update(self.player, self.level)
+                # Update enemies
+                for enemy in self.level.enemies:
+                    enemy.update(self.player, self.level)
 
-            # Check collisions
-            self.check_enemy_collisions()
-            self.check_collectible_collisions()
+                # Check collisions
+                self.check_enemy_collisions()
+                self.check_collectible_collisions()
 
-            # Check if player completed the level
-            if self.check_end_level_collision():
-                self.advance_level()
+                # Check if player is dead
+                self.check_player_death()
 
-            self.update_camera()
+                # Check if player completed the level
+                if self.check_end_level_collision():
+                    self.advance_level()
+
+                self.update_camera()
 
             # Draw
             self.screen.fill(BLACK)
             self.level.draw(self.screen, self.camera_x, self.camera_y)
             self.player.draw(self.screen, self.camera_x, self.camera_y)
             self.draw_ui()
+
+            # Draw game over screen if player is dead
+            if self.game_over:
+                self.draw_game_over()
 
             pygame.display.flip()
             self.clock.tick(FPS)

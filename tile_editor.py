@@ -1958,7 +1958,8 @@ class TileEditor:
 
         y = editor_y + 45
 
-        # Name field
+        # Name field - match draw function exactly
+        name_label_y = y
         y += 20
         name_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
         if name_field.collidepoint(pos):
@@ -1968,7 +1969,8 @@ class TileEditor:
             return
         y += 35
 
-        # Value field
+        # Value field - match draw function exactly
+        value_label_y = y
         y += 20
         value_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
         if value_field.collidepoint(pos):
@@ -1978,7 +1980,8 @@ class TileEditor:
             return
         y += 35
 
-        # Color field
+        # Color field - match draw function exactly
+        color_label_y = y
         y += 20
         color_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
         if color_field.collidepoint(pos):
@@ -1988,7 +1991,8 @@ class TileEditor:
             return
         y += 35
 
-        # Effect Type buttons
+        # Effect Type buttons - match draw function exactly
+        effect_label_y = y
         y += 25
         for effect in CollectibleEffect:
             effect_button = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
