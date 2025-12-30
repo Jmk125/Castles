@@ -418,10 +418,26 @@ class TileEditor:
     
     def handle_palette_click(self, pos):
         """Handle clicking in the tile palette"""
-        # Check if clicking in property editor
+        # Check if clicking in property editor dialog (only if it's open)
         if self.show_property_editor:
-            self.handle_property_editor_click(pos)
-            return
+            # Property editor bounds (must match draw_property_editor)
+            editor_x = self.palette_rect.x + 20
+            editor_y = 150
+            editor_width = self.palette_width - 40
+            editor_height = 450
+            editor_rect = pygame.Rect(editor_x, editor_y, editor_width, editor_height)
+
+            if editor_rect.collidepoint(pos):
+                # Click is inside the editor, handle it
+                self.handle_property_editor_click(pos)
+                return
+            else:
+                # Click is outside the editor, close it
+                self.show_property_editor = False
+                self.editing_tile_id = None
+                self.input_active = False
+                # Fall through to handle normal palette clicks
+                return
         
         # Match y_offset calculation from draw_palette
         y_offset = 10  # "Layers:"
@@ -453,9 +469,8 @@ class TileEditor:
         elif narrower_button.collidepoint(pos):
             self.level_width = max(50, self.level_width - 10)
             return
-        
-        y_offset += 25  # resize buttons
-        y_offset += 35  # gap after buttons
+
+        y_offset += 35  # gap after resize buttons (matches draw_palette)
         
         # Check plus button (fixed position, not scrolled)
         plus_button_rect = pygame.Rect(self.palette_rect.x + 10, y_offset, self.palette_width - 20, 30)
@@ -471,13 +486,14 @@ class TileEditor:
         
         # Tiles start here - this is tile_area_top in draw_palette
         tile_area_top = y_offset
-        
+        tile_area_height = SCREEN_HEIGHT - y_offset - 100  # Match draw_palette calculation
+
         # Check tile selection and edit buttons (these ARE scrolled)
         # Use the exact same calculation as draw_palette
         tile_y = y_offset - self.scroll_offset
         for tile_id, tile_type in self.tile_types.items():
-            # Skip if not visible
-            if tile_y + 60 < tile_area_top or tile_y > SCREEN_HEIGHT - 100:
+            # Skip if not visible (match draw_palette visibility check)
+            if tile_y + 60 < tile_area_top or tile_y > tile_area_top + tile_area_height:
                 tile_y += 70
                 continue
             
