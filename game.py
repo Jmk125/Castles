@@ -17,8 +17,10 @@ TILE_SIZE = 16
 FPS = 60
 GRAVITY = 0.5
 MAX_FALL_SPEED = 10
-# Fraction of the viewport height where the player must move above before the camera follows vertically.
-CAMERA_VERTICAL_TRIGGER_FRACTION = 0.5
+# Fraction of the viewport height where the player's feet sit within the view.
+CAMERA_VERTICAL_TRIGGER_FRACTION = 0.8
+# Fraction of the viewport height used as a vertical deadzone around the target.
+CAMERA_VERTICAL_DEADZONE_FRACTION = 0.08
 
 # Colors
 WHITE = (255, 255, 255)
@@ -1112,9 +1114,9 @@ class Game:
         viewport_width = self.level.viewport_width
         viewport_height = self.level.viewport_height
         trigger_y = viewport_height * CAMERA_VERTICAL_TRIGGER_FRACTION
-        player_center_y = self.player.y + self.player.height / 2
+        player_feet_y = self.player.y + self.player.height
         target_x = self.player.x + self.player.width // 2 - viewport_width // 2
-        target_y = player_center_y - trigger_y
+        target_y = player_feet_y - trigger_y
         max_camera_x = max(0, self.level.width * TILE_SIZE - viewport_width)
         max_camera_y = max(0, self.level.height * TILE_SIZE - viewport_height)
         self.camera_x = max(0, min(target_x, max_camera_x))
@@ -1178,10 +1180,15 @@ class Game:
         # Center camera on player horizontally, keep player's feet near bottom vertically
         target_x = self.player.x + self.player.width // 2 - viewport_width // 2
         target_y = self.camera_y
-        player_center_y = self.player.y + self.player.height / 2
-        trigger_y = viewport_height * CAMERA_VERTICAL_TRIGGER_FRACTION
-        if player_center_y - self.camera_y < trigger_y:
-            target_y = player_center_y - trigger_y
+        player_feet_y = self.player.y + self.player.height
+        desired_y = player_feet_y - (viewport_height * CAMERA_VERTICAL_TRIGGER_FRACTION)
+        deadzone = viewport_height * CAMERA_VERTICAL_DEADZONE_FRACTION
+        lower_bound = desired_y - deadzone
+        upper_bound = desired_y + deadzone
+        if self.camera_y < lower_bound:
+            target_y = lower_bound
+        elif self.camera_y > upper_bound:
+            target_y = upper_bound
 
         # Clamp camera to level bounds
         max_camera_x = max(0, self.level.width * TILE_SIZE - viewport_width)
