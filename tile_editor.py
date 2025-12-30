@@ -319,6 +319,7 @@ class TileEditor:
         self.viewport_resize_start = None
 
         # Top bar buttons
+        self.new_button_rect = None
         self.open_button_rect = None
         self.save_as_button_rect = None
         
@@ -719,6 +720,10 @@ class TileEditor:
     def handle_left_click(self, pos):
         """Handle left mouse click"""
         # Check if clicking on top bar buttons
+        if self.new_button_rect and self.new_button_rect.collidepoint(pos):
+            self.new_level()
+            return
+
         if self.open_button_rect and self.open_button_rect.collidepoint(pos):
             self.open_level_dialog()
             return
@@ -2674,6 +2679,41 @@ class TileEditor:
             collectible_type.required = not collectible_type.required
             return
 
+    def new_level(self):
+        """Create a new blank level"""
+        # Reset level data
+        self.level_width = DEFAULT_LEVEL_WIDTH
+        self.level_height = DEFAULT_LEVEL_HEIGHT
+        self.tiles = {
+            'background': {},
+            'main': {},
+            'foreground': {}
+        }
+
+        # Clear enemies and collectibles
+        self.enemies = []
+        self.collectibles = []
+
+        # Reset background images
+        self.background_image_path = None
+        self.background_image = None
+        self.background_x = 0
+        self.background_y = 0
+        self.background_width = 0
+        self.background_height = 0
+        self.background_layers = []
+        self.selected_bg_image_index = None
+
+        # Reset camera and viewport
+        self.camera_x = 0
+        self.camera_y = 0
+        self.viewport_x = 0
+        self.viewport_y = 0
+        self.viewport_width = VIEWPORT_WIDTH
+        self.viewport_height = VIEWPORT_HEIGHT
+
+        print("New level created")
+
     def open_level_dialog(self):
         """Open a file dialog to load a level"""
         root = tk.Tk()
@@ -2941,18 +2981,27 @@ class TileEditor:
         print(f"Level loaded from {filename}")
 
     def draw_top_bar(self):
-        """Draw the top bar with Open and Save As buttons"""
-        bar_height = 40
+        """Draw the top bar with New, Open, and Save As buttons"""
+        bar_height = 32
         bar_rect = pygame.Rect(0, 0, SCREEN_WIDTH, bar_height)
         pygame.draw.rect(self.screen, (60, 60, 60), bar_rect)
         pygame.draw.line(self.screen, BLACK, (0, bar_height), (SCREEN_WIDTH, bar_height), 2)
 
-        # Open button
-        button_width = 100
-        button_height = 28
-        button_margin = 10
+        # Button dimensions
+        button_width = 90
+        button_height = 24
+        button_margin = 6
 
-        self.open_button_rect = pygame.Rect(button_margin, (bar_height - button_height) // 2, button_width, button_height)
+        # New button
+        self.new_button_rect = pygame.Rect(button_margin, (bar_height - button_height) // 2, button_width, button_height)
+        pygame.draw.rect(self.screen, YELLOW, self.new_button_rect)
+        pygame.draw.rect(self.screen, BLACK, self.new_button_rect, 2)
+        new_text = self.font.render("New", True, BLACK)
+        text_rect = new_text.get_rect(center=self.new_button_rect.center)
+        self.screen.blit(new_text, text_rect)
+
+        # Open button
+        self.open_button_rect = pygame.Rect(button_margin * 2 + button_width, (bar_height - button_height) // 2, button_width, button_height)
         pygame.draw.rect(self.screen, GREEN, self.open_button_rect)
         pygame.draw.rect(self.screen, BLACK, self.open_button_rect, 2)
         open_text = self.font.render("Open", True, BLACK)
@@ -2960,7 +3009,7 @@ class TileEditor:
         self.screen.blit(open_text, text_rect)
 
         # Save As button
-        self.save_as_button_rect = pygame.Rect(button_margin + button_width + button_margin,
+        self.save_as_button_rect = pygame.Rect(button_margin * 3 + button_width * 2,
                                                  (bar_height - button_height) // 2,
                                                  button_width, button_height)
         pygame.draw.rect(self.screen, BLUE, self.save_as_button_rect)
