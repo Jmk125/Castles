@@ -39,6 +39,7 @@ class EditorTab(Enum):
     TILES = "tiles"
     ENEMIES = "enemies"
     OBJECTS = "objects"
+    BACKGROUND = "background"
 
 # Tile Properties
 class TileProperty(Enum):
@@ -170,6 +171,30 @@ class CollectibleInstance:
             'collectible_type_id': self.collectible_type_id
         }
 
+@dataclass
+class BackgroundImage:
+    layer_index: int  # 0-3 (0 = far background, 3 = closest)
+    image_path: str
+    image: Optional[pygame.Surface]
+    x: int
+    y: int
+    width: int
+    height: int
+    repeat_x: bool = False  # Repeat horizontally
+    repeat_y: bool = False  # Repeat vertically
+
+    def to_dict(self):
+        return {
+            'layer_index': self.layer_index,
+            'image_path': self.image_path,
+            'x': self.x,
+            'y': self.y,
+            'width': self.width,
+            'height': self.height,
+            'repeat_x': self.repeat_x,
+            'repeat_y': self.repeat_y
+        }
+
 class Tool(Enum):
     PENCIL = "pencil"
     RECTANGLE = "rectangle"
@@ -220,7 +245,7 @@ class TileEditor:
         self.collectibles: List[CollectibleInstance] = []
         self._create_placeholder_collectibles()
 
-        # Background image
+        # Background image (legacy - still used for TILES tab)
         self.background_image_path: Optional[str] = None
         self.background_image: Optional[pygame.Surface] = None
         self.background_x = 0
@@ -229,6 +254,15 @@ class TileEditor:
         self.background_height = 0
         self.resizing_background = False
         self.resize_start_pos = None
+
+        # Background layers (new system for BACKGROUND tab)
+        self.background_layers: List[BackgroundImage] = []  # All background images across all layers
+        self.selected_bg_image_index: Optional[int] = None  # Currently selected background image
+        self.dragging_bg_image = False
+        self.resizing_bg_image = False
+        self.bg_drag_start_pos = None
+        self.bg_resize_start_pos = None
+        self.current_bg_layer = 0  # 0-3, which layer is selected in the UI
 
         # Current state
         self.current_tab = EditorTab.TILES
@@ -641,6 +675,35 @@ class TileEditor:
                 self.resize_start_pos = pos
                 return
 
+        # Check if clicking on background layer images (new system)
+        if self.current_tab == EditorTab.BACKGROUND and self.canvas_rect.collidepoint(pos):
+            # Check resize handle first
+            if self.selected_bg_image_index is not None:
+                bg_img = self.background_layers[self.selected_bg_image_index]
+                screen_x = bg_img.x - self.camera_x
+                screen_y = bg_img.y - self.camera_y
+                handle_size = 10
+                handle_x = screen_x + bg_img.width - handle_size
+                handle_y = screen_y + bg_img.height - handle_size
+                handle_rect = pygame.Rect(handle_x, handle_y, handle_size, handle_size)
+
+                if handle_rect.collidepoint(pos):
+                    self.resizing_bg_image = True
+                    self.bg_resize_start_pos = pos
+                    return
+
+            # Check if clicking on any background image
+            for bg_img in reversed(self.background_layers):
+                screen_x = bg_img.x - self.camera_x
+                screen_y = bg_img.y - self.camera_y
+                img_rect = pygame.Rect(screen_x, screen_y, bg_img.width, bg_img.height)
+
+                if img_rect.collidepoint(pos):
+                    self.selected_bg_image_index = self.background_layers.index(bg_img)
+                    self.dragging_bg_image = True
+                    self.bg_drag_start_pos = pos
+                    return
+
         # Check if clicking in palette
         if self.palette_rect.collidepoint(pos):
             self.handle_palette_click(pos)
@@ -669,7 +732,7 @@ class TileEditor:
                     enemy = EnemyInstance(x=snap_x, y=snap_y, enemy_type_id=self.current_enemy_type_id)
                     self.enemies.append(enemy)
 
-            else:  # OBJECTS tab
+            elif self.current_tab == EditorTab.OBJECTS:
                 # Collectible placement logic
                 if self.current_collectible_type_id is not None:
                     world_x = pos[0] + self.camera_x
@@ -679,13 +742,26 @@ class TileEditor:
                     snap_y = (world_y // TILE_SIZE) * TILE_SIZE
                     collectible = CollectibleInstance(x=snap_x, y=snap_y, collectible_type_id=self.current_collectible_type_id)
                     self.collectibles.append(collectible)
+
+            # BACKGROUND tab clicks are handled above
     
     def handle_left_release(self, pos):
         """Handle left mouse release"""
-        # Stop resizing background
+        # Stop resizing background (legacy)
         if self.resizing_background:
             self.resizing_background = False
             self.resize_start_pos = None
+            return
+
+        # Stop dragging/resizing background image (new system)
+        if self.dragging_bg_image:
+            self.dragging_bg_image = False
+            self.bg_drag_start_pos = None
+            return
+
+        if self.resizing_bg_image:
+            self.resizing_bg_image = False
+            self.bg_resize_start_pos = None
             return
 
         if self.drawing and self.draw_start_tile:
@@ -732,7 +808,27 @@ class TileEditor:
                         break
     
     def handle_mouse_motion(self, pos):
-        """Handle mouse motion while drawing"""
+        """Handle mouse motion while drawing, dragging, or resizing"""
+        # Handle dragging background image
+        if self.dragging_bg_image and self.selected_bg_image_index is not None:
+            bg_img = self.background_layers[self.selected_bg_image_index]
+            dx = pos[0] - self.bg_drag_start_pos[0]
+            dy = pos[1] - self.bg_drag_start_pos[1]
+            bg_img.x += dx
+            bg_img.y += dy
+            self.bg_drag_start_pos = pos
+            return
+
+        # Handle resizing background image
+        if self.resizing_bg_image and self.selected_bg_image_index is not None:
+            bg_img = self.background_layers[self.selected_bg_image_index]
+            dx = pos[0] - self.bg_resize_start_pos[0]
+            dy = pos[1] - self.bg_resize_start_pos[1]
+            bg_img.width = max(10, bg_img.width + dx)
+            bg_img.height = max(10, bg_img.height + dy)
+            self.bg_resize_start_pos = pos
+            return
+
         if self.draw_start_tile:
             tile_pos = self.screen_to_tile(pos[0], pos[1])
             if tile_pos:
@@ -801,19 +897,23 @@ class TileEditor:
                 self.input_active = False
                 return
 
-        # Check tab buttons
+        # Check tab buttons (4 tabs in 2 rows)
         y_offset = 10
-        tab_width = (self.palette_width - 40) // 3
+        tab_width = (self.palette_width - 40) // 2
+        tab_height = 25
         tab_x = self.palette_rect.x + 10
 
-        for i, tab in enumerate([EditorTab.TILES, EditorTab.ENEMIES, EditorTab.OBJECTS]):
-            tab_rect = pygame.Rect(tab_x + i * (tab_width + 5), y_offset, tab_width, 25)
+        tabs = [EditorTab.TILES, EditorTab.ENEMIES, EditorTab.OBJECTS, EditorTab.BACKGROUND]
+        for i, tab in enumerate(tabs):
+            row = i // 2
+            col = i % 2
+            tab_rect = pygame.Rect(tab_x + col * (tab_width + 5), y_offset + row * (tab_height + 5), tab_width, tab_height)
             if tab_rect.collidepoint(pos):
                 self.current_tab = tab
                 self.scroll_offset = 0  # Reset scroll when switching tabs
                 return
 
-        y_offset += 35
+        y_offset += 65
 
         # Handle tile-specific controls
         if self.current_tab == EditorTab.TILES:
@@ -865,9 +965,10 @@ class TileEditor:
             elif self.current_tab == EditorTab.ENEMIES:
                 new_id = self.add_enemy_type(f"New Enemy {self.next_enemy_type_id}", None, EnemyAI.PATROL.value, 3, 1, 1.5, (200, 100, 100))
                 self.current_enemy_type_id = new_id
-            else:  # OBJECTS
+            elif self.current_tab == EditorTab.OBJECTS:
                 new_id = self.add_collectible_type(f"New Object {self.next_collectible_type_id}", None, CollectibleEffect.SCORE.value, 10, (255, 200, 0))
                 self.current_collectible_type_id = new_id
+            # BACKGROUND tab doesn't use the plus button
             return
 
         y_offset += 40  # gap after plus button
@@ -934,7 +1035,7 @@ class TileEditor:
 
                 item_y += 70
 
-        else:  # OBJECTS tab
+        elif self.current_tab == EditorTab.OBJECTS:
             item_y = y_offset - self.scroll_offset
             for collectible_id, collectible_type in self.collectible_types.items():
                 if item_y + 60 < content_area_top or item_y > content_area_top + content_area_height:
@@ -961,6 +1062,55 @@ class TileEditor:
                     return
 
                 item_y += 70
+
+        else:  # BACKGROUND tab
+            # Handle layer selection buttons
+            layer_y = y_offset - self.scroll_offset
+            for layer_idx in range(4):
+                layer_button = pygame.Rect(self.palette_rect.x + 10, layer_y, self.palette_width - 20, 30)
+                if layer_button.collidepoint(pos):
+                    self.current_bg_layer = layer_idx
+                    return
+                layer_y += 35
+
+            layer_y += 10  # Skip the "Images in Layer X:" text
+            layer_y += 20
+
+            # Handle clicks on background images
+            layer_images = [img for img in self.background_layers if img.layer_index == self.current_bg_layer]
+            for idx, bg_img in enumerate(layer_images):
+                bg_img_idx = self.background_layers.index(bg_img)
+                item_rect = pygame.Rect(self.palette_rect.x + 10, layer_y, self.palette_width - 20, 60)
+
+                if not item_rect.collidepoint(pos):
+                    layer_y += 65
+                    continue
+
+                # Delete button
+                del_button = pygame.Rect(item_rect.x + item_rect.width - 25, item_rect.y + 5, 20, 20)
+                if del_button.collidepoint(pos):
+                    self.background_layers.pop(bg_img_idx)
+                    if self.selected_bg_image_index == bg_img_idx:
+                        self.selected_bg_image_index = None
+                    return
+
+                # Repeat toggle buttons
+                repeat_x_btn = pygame.Rect(item_rect.x + 60, item_rect.y + 40, 35, 15)
+                repeat_y_btn = pygame.Rect(item_rect.x + 100, item_rect.y + 40, 35, 15)
+
+                if repeat_x_btn.collidepoint(pos):
+                    bg_img.repeat_x = not bg_img.repeat_x
+                    return
+
+                if repeat_y_btn.collidepoint(pos):
+                    bg_img.repeat_y = not bg_img.repeat_y
+                    return
+
+                # Select this image
+                self.selected_bg_image_index = bg_img_idx
+                return
+
+                layer_y += 65
     
     def handle_property_editor_click(self, pos):
         """Handle clicks in the property editor dialog"""
@@ -1045,6 +1195,29 @@ class TileEditor:
 
         # Get mouse position to see where the file was dropped
         mouse_pos = pygame.mouse.get_pos()
+
+        # Handle BACKGROUND tab - add image to current layer
+        if self.current_tab == EditorTab.BACKGROUND:
+            try:
+                image = pygame.image.load(filepath)
+                # Add to current layer at a default position
+                bg_img = BackgroundImage(
+                    layer_index=self.current_bg_layer,
+                    image_path=filepath,
+                    image=image,
+                    x=0,
+                    y=0,
+                    width=image.get_width(),
+                    height=image.get_height(),
+                    repeat_x=False,
+                    repeat_y=False
+                )
+                self.background_layers.append(bg_img)
+                self.selected_bg_image_index = len(self.background_layers) - 1
+                print(f"Added background image to layer {self.current_bg_layer}: {filepath}")
+            except Exception as e:
+                print(f"Error loading background image: {e}")
+            return
         
         # If property editor is open and file dropped in palette area, update current editing tile
         if self.show_property_editor and self.editing_tile_id is not None and self.palette_rect.collidepoint(mouse_pos):
@@ -1146,7 +1319,7 @@ class TileEditor:
         # Draw background
         self.screen.fill(DARK_GRAY, self.canvas_rect)
 
-        # Draw background image if loaded
+        # Draw background image if loaded (legacy, for TILES tab)
         if self.background_image and self.background_width > 0 and self.background_height > 0:
             screen_x = self.background_x - self.camera_x
             screen_y = self.background_y - self.camera_y
@@ -1159,6 +1332,66 @@ class TileEditor:
             handle_y = screen_y + self.background_height - handle_size
             pygame.draw.rect(self.screen, YELLOW, (handle_x, handle_y, handle_size, handle_size))
             pygame.draw.rect(self.screen, BLACK, (handle_x, handle_y, handle_size, handle_size), 1)
+
+        # Draw background layers (new system, all 4 layers from far to near)
+        for layer_idx in range(4):
+            layer_images = [img for img in self.background_layers if img.layer_index == layer_idx]
+            for bg_img in layer_images:
+                screen_x = bg_img.x - self.camera_x
+                screen_y = bg_img.y - self.camera_y
+
+                if bg_img.repeat_x or bg_img.repeat_y:
+                    # Calculate how many times to repeat
+                    start_x = screen_x
+                    start_y = screen_y
+
+                    # For repeating, we need to tile the image
+                    if bg_img.repeat_x and bg_img.repeat_y:
+                        # Repeat in both directions
+                        tile_x = start_x
+                        while tile_x < self.canvas_rect.width:
+                            tile_y = start_y
+                            while tile_y < self.canvas_rect.height:
+                                if tile_x + bg_img.width > 0 and tile_y + bg_img.height > 0:
+                                    scaled_img = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
+                                    self.screen.blit(scaled_img, (tile_x, tile_y))
+                                tile_y += bg_img.height
+                            tile_x += bg_img.width
+                    elif bg_img.repeat_x:
+                        # Repeat horizontally only
+                        tile_x = start_x
+                        while tile_x < self.canvas_rect.width:
+                            if tile_x + bg_img.width > 0 and screen_y + bg_img.height > 0 and screen_y < self.canvas_rect.height:
+                                scaled_img = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
+                                self.screen.blit(scaled_img, (tile_x, screen_y))
+                            tile_x += bg_img.width
+                    elif bg_img.repeat_y:
+                        # Repeat vertically only
+                        tile_y = start_y
+                        while tile_y < self.canvas_rect.height:
+                            if screen_x + bg_img.width > 0 and screen_x < self.canvas_rect.width and tile_y + bg_img.height > 0:
+                                scaled_img = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
+                                self.screen.blit(scaled_img, (screen_x, tile_y))
+                            tile_y += bg_img.height
+                else:
+                    # No repeat, just draw once
+                    if screen_x + bg_img.width > 0 and screen_y + bg_img.height > 0 and screen_x < self.canvas_rect.width and screen_y < self.canvas_rect.height:
+                        scaled_img = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
+                        self.screen.blit(scaled_img, (screen_x, screen_y))
+
+                # If this image is selected in BACKGROUND tab, draw handles
+                if self.current_tab == EditorTab.BACKGROUND:
+                    bg_img_idx = self.background_layers.index(bg_img)
+                    if bg_img_idx == self.selected_bg_image_index:
+                        # Draw selection border
+                        pygame.draw.rect(self.screen, GREEN, (screen_x, screen_y, bg_img.width, bg_img.height), 2)
+
+                        # Draw resize handle (bottom-right corner)
+                        handle_size = 10
+                        handle_x = screen_x + bg_img.width - handle_size
+                        handle_y = screen_y + bg_img.height - handle_size
+                        pygame.draw.rect(self.screen, YELLOW, (handle_x, handle_y, handle_size, handle_size))
+                        pygame.draw.rect(self.screen, BLACK, (handle_x, handle_y, handle_size, handle_size), 1)
 
         # Draw grid
         start_x = -(self.camera_x % TILE_SIZE)
@@ -1311,13 +1544,17 @@ class TileEditor:
         pygame.draw.line(self.screen, BLACK, (self.palette_rect.x, 0),
                         (self.palette_rect.x, SCREEN_HEIGHT), 2)
 
-        # Tab buttons
+        # Tab buttons (4 tabs in 2 rows)
         y_offset = 10
-        tab_width = (self.palette_width - 40) // 3
+        tab_width = (self.palette_width - 40) // 2
+        tab_height = 25
         tab_x = self.palette_rect.x + 10
 
-        for i, tab in enumerate([EditorTab.TILES, EditorTab.ENEMIES, EditorTab.OBJECTS]):
-            tab_rect = pygame.Rect(tab_x + i * (tab_width + 5), y_offset, tab_width, 25)
+        tabs = [EditorTab.TILES, EditorTab.ENEMIES, EditorTab.OBJECTS, EditorTab.BACKGROUND]
+        for i, tab in enumerate(tabs):
+            row = i // 2
+            col = i % 2
+            tab_rect = pygame.Rect(tab_x + col * (tab_width + 5), y_offset + row * (tab_height + 5), tab_width, tab_height)
 
             # Draw button
             if self.current_tab == tab:
@@ -1331,7 +1568,7 @@ class TileEditor:
             text_rect = tab_text.get_rect(center=tab_rect.center)
             self.screen.blit(tab_text, text_rect)
 
-        y_offset += 35
+        y_offset += 65
 
         # Only show layer toggles for tiles tab
         if self.current_tab == EditorTab.TILES:
@@ -1407,8 +1644,10 @@ class TileEditor:
             plus_text = self.font.render("+ Add New Tile", True, BLACK)
         elif self.current_tab == EditorTab.ENEMIES:
             plus_text = self.font.render("+ Add New Enemy", True, BLACK)
-        else:  # OBJECTS
+        elif self.current_tab == EditorTab.OBJECTS:
             plus_text = self.font.render("+ Add New Object", True, BLACK)
+        else:  # BACKGROUND
+            plus_text = self.font.render("Drag & Drop Images", True, BLACK)
 
         text_rect = plus_text.get_rect(center=plus_button.center)
         self.screen.blit(plus_text, text_rect)
@@ -1420,8 +1659,10 @@ class TileEditor:
             text = self.font.render("Tiles:", True, BLACK)
         elif self.current_tab == EditorTab.ENEMIES:
             text = self.font.render("Enemy Types:", True, BLACK)
-        else:  # OBJECTS
+        elif self.current_tab == EditorTab.OBJECTS:
             text = self.font.render("Collectibles:", True, BLACK)
+        else:  # BACKGROUND
+            text = self.font.render("Background Layers:", True, BLACK)
 
         self.screen.blit(text, (self.palette_rect.x + 10, y_offset))
         y_offset += 25
@@ -1537,7 +1778,7 @@ class TileEditor:
 
                 item_y += 70
 
-        else:  # OBJECTS tab
+        elif self.current_tab == EditorTab.OBJECTS:
             # Calculate total height needed
             total_height = len(self.collectible_types) * 70
             self.max_scroll = max(0, total_height - content_area_height)
@@ -1586,6 +1827,118 @@ class TileEditor:
                 self.screen.blit(edit_text, (edit_button.x + 10, edit_button.y + 2))
 
                 item_y += 70
+
+        else:  # BACKGROUND tab
+            # Draw layer selection buttons
+            layer_y = y_offset - self.scroll_offset
+            layer_names = ["Layer 1 (Far)", "Layer 2", "Layer 3", "Layer 4 (Near)"]
+
+            for layer_idx in range(4):
+                layer_button = pygame.Rect(self.palette_rect.x + 10, layer_y, self.palette_width - 20, 30)
+
+                # Highlight if selected
+                if layer_idx == self.current_bg_layer:
+                    pygame.draw.rect(self.screen, BLUE, layer_button)
+                else:
+                    pygame.draw.rect(self.screen, WHITE, layer_button)
+                pygame.draw.rect(self.screen, BLACK, layer_button, 2)
+
+                # Layer name
+                layer_text = self.small_font.render(layer_names[layer_idx], True, BLACK)
+                self.screen.blit(layer_text, (layer_button.x + 10, layer_button.y + 8))
+
+                # Count images in this layer
+                layer_images = [img for img in self.background_layers if img.layer_index == layer_idx]
+                count_text = self.small_font.render(f"({len(layer_images)} images)", True, DARK_GRAY)
+                self.screen.blit(count_text, (layer_button.x + layer_button.width - 80, layer_button.y + 8))
+
+                layer_y += 35
+
+            layer_y += 10
+
+            # Show images in selected layer
+            text = self.small_font.render(f"Images in {layer_names[self.current_bg_layer]}:", True, BLACK)
+            self.screen.blit(text, (self.palette_rect.x + 10, layer_y))
+            layer_y += 20
+
+            layer_images = [img for img in self.background_layers if img.layer_index == self.current_bg_layer]
+
+            if not layer_images:
+                hint_text = self.small_font.render("Drag & drop images here", True, DARK_GRAY)
+                self.screen.blit(hint_text, (self.palette_rect.x + 10, layer_y))
+            else:
+                for idx, bg_img in enumerate(layer_images):
+                    bg_img_idx = self.background_layers.index(bg_img)
+                    item_rect = pygame.Rect(self.palette_rect.x + 10, layer_y, self.palette_width - 20, 60)
+
+                    # Highlight if selected
+                    if bg_img_idx == self.selected_bg_image_index:
+                        pygame.draw.rect(self.screen, BLUE, item_rect, 3)
+                    else:
+                        pygame.draw.rect(self.screen, DARK_GRAY, item_rect, 1)
+
+                    # Preview
+                    preview_rect = pygame.Rect(item_rect.x + 5, item_rect.y + 5, 50, 50)
+                    if bg_img.image:
+                        # Scale image to fit preview
+                        aspect = bg_img.image.get_width() / bg_img.image.get_height()
+                        if aspect > 1:
+                            preview_w = 50
+                            preview_h = int(50 / aspect)
+                        else:
+                            preview_h = 50
+                            preview_w = int(50 * aspect)
+                        scaled_img = pygame.transform.scale(bg_img.image, (preview_w, preview_h))
+                        center_x = preview_rect.x + (50 - preview_w) // 2
+                        center_y = preview_rect.y + (50 - preview_h) // 2
+                        self.screen.blit(scaled_img, (center_x, center_y))
+                    pygame.draw.rect(self.screen, BLACK, preview_rect, 1)
+
+                    # Image info
+                    filename = os.path.basename(bg_img.image_path)[:12]
+                    name_text = self.small_font.render(filename, True, BLACK)
+                    self.screen.blit(name_text, (item_rect.x + 60, item_rect.y + 5))
+
+                    # Repeat info
+                    repeat_str = ""
+                    if bg_img.repeat_x and bg_img.repeat_y:
+                        repeat_str = "Repeat: X+Y"
+                    elif bg_img.repeat_x:
+                        repeat_str = "Repeat: X"
+                    elif bg_img.repeat_y:
+                        repeat_str = "Repeat: Y"
+                    else:
+                        repeat_str = "No repeat"
+
+                    repeat_text = self.small_font.render(repeat_str, True, DARK_GRAY)
+                    self.screen.blit(repeat_text, (item_rect.x + 60, item_rect.y + 25))
+
+                    # Repeat toggle buttons
+                    repeat_x_btn = pygame.Rect(item_rect.x + 60, item_rect.y + 40, 35, 15)
+                    repeat_y_btn = pygame.Rect(item_rect.x + 100, item_rect.y + 40, 35, 15)
+
+                    # Repeat X button
+                    pygame.draw.rect(self.screen, BLUE if bg_img.repeat_x else WHITE, repeat_x_btn)
+                    pygame.draw.rect(self.screen, BLACK, repeat_x_btn, 1)
+                    rx_text = self.small_font.render("Rep X", True, BLACK)
+                    self.screen.blit(rx_text, (repeat_x_btn.x + 2, repeat_x_btn.y + 1))
+
+                    # Repeat Y button
+                    pygame.draw.rect(self.screen, BLUE if bg_img.repeat_y else WHITE, repeat_y_btn)
+                    pygame.draw.rect(self.screen, BLACK, repeat_y_btn, 1)
+                    ry_text = self.small_font.render("Rep Y", True, BLACK)
+                    self.screen.blit(ry_text, (repeat_y_btn.x + 2, repeat_y_btn.y + 1))
+
+                    # Delete button
+                    del_button = pygame.Rect(item_rect.x + item_rect.width - 25, item_rect.y + 5, 20, 20)
+                    pygame.draw.rect(self.screen, RED, del_button)
+                    pygame.draw.rect(self.screen, BLACK, del_button, 1)
+                    del_text = self.small_font.render("X", True, WHITE)
+                    self.screen.blit(del_text, (del_button.x + 5, del_button.y + 2))
+
+                    layer_y += 65
+
+            self.max_scroll = 0  # No scrolling needed for background tab
 
         # Reset clipping
         self.screen.set_clip(None)
@@ -2168,7 +2521,8 @@ class TileEditor:
                 'y': self.background_y,
                 'width': self.background_width,
                 'height': self.background_height
-            } if self.background_image_path else None
+            } if self.background_image_path else None,
+            'background_layers': [bg_img.to_dict() for bg_img in self.background_layers]
         }
 
         with open(filename, 'w') as f:
@@ -2318,6 +2672,31 @@ class TileEditor:
             self.background_y = 0
             self.background_width = 0
             self.background_height = 0
+
+        # Load background layers
+        self.background_layers = []
+        if 'background_layers' in data:
+            for bg_data in data['background_layers']:
+                image = None
+                if bg_data['image_path'] and os.path.exists(bg_data['image_path']):
+                    try:
+                        image = pygame.image.load(bg_data['image_path'])
+                    except Exception as e:
+                        print(f"Error loading background layer image: {e}")
+
+                if image:
+                    bg_img = BackgroundImage(
+                        layer_index=bg_data['layer_index'],
+                        image_path=bg_data['image_path'],
+                        image=image,
+                        x=bg_data['x'],
+                        y=bg_data['y'],
+                        width=bg_data['width'],
+                        height=bg_data['height'],
+                        repeat_x=bg_data.get('repeat_x', False),
+                        repeat_y=bg_data.get('repeat_y', False)
+                    )
+                    self.background_layers.append(bg_img)
 
         print(f"Level loaded from {filename}")
     
