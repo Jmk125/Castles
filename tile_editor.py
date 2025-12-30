@@ -523,7 +523,7 @@ class TileEditor:
             return None
         
         world_x = screen_x + self.camera_x
-        world_y = screen_y + self.camera_y
+        world_y = screen_y - self.canvas_rect.y + self.camera_y
         
         tile_x = world_x // TILE_SIZE
         tile_y = world_y // TILE_SIZE
