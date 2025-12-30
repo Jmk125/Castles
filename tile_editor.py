@@ -542,7 +542,8 @@ class TileEditor:
                         self.input_text += event.unicode
                 # Normal hotkeys
                 elif event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
-                    self.save_level("level.json")
+                    filename = self.get_next_level_filename()
+                    self.save_level(filename)
                 elif event.key == pygame.K_o and pygame.key.get_mods() & pygame.KMOD_CTRL:
                     self.load_level("level.json")
                 elif event.key == pygame.K_ESCAPE:
@@ -2020,6 +2021,13 @@ class TileEditor:
         if required_checkbox.collidepoint(pos):
             collectible_type.required = not collectible_type.required
             return
+
+    def get_next_level_filename(self) -> str:
+        """Get the next available level filename (level1.json, level2.json, etc.)"""
+        level_num = 1
+        while os.path.exists(f"level{level_num}.json"):
+            level_num += 1
+        return f"level{level_num}.json"
 
     def save_level(self, filename: str):
         """Save the current level to JSON"""
