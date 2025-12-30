@@ -736,8 +736,9 @@ class TileEditor:
         # Check if clicking on viewport controls (in canvas area)
         # Skip viewport controls when on BACKGROUND tab to allow background image dragging
         if self.current_tab != EditorTab.BACKGROUND and self.canvas_rect.collidepoint(pos):
+            canvas_offset_y = self.canvas_rect.y
             viewport_screen_x = self.viewport_x - self.camera_x
-            viewport_screen_y = self.viewport_y - self.camera_y
+            viewport_screen_y = self.viewport_y - self.camera_y + canvas_offset_y
 
             # Check resize handle (top-left corner)
             handle_size = 12
