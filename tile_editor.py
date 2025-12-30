@@ -811,7 +811,7 @@ class TileEditor:
                 # Enemy placement logic
                 if self.current_enemy_type_id is not None:
                     world_x = pos[0] + self.camera_x
-                    world_y = pos[1] + self.camera_y
+                    world_y = pos[1] - self.canvas_rect.y + self.camera_y
                     # Snap to grid
                     snap_x = (world_x // TILE_SIZE) * TILE_SIZE
                     snap_y = (world_y // TILE_SIZE) * TILE_SIZE
@@ -822,7 +822,7 @@ class TileEditor:
                 # Collectible placement logic
                 if self.current_collectible_type_id is not None:
                     world_x = pos[0] + self.camera_x
-                    world_y = pos[1] + self.camera_y
+                    world_y = pos[1] - self.canvas_rect.y + self.camera_y
                     # Snap to grid
                     snap_x = (world_x // TILE_SIZE) * TILE_SIZE
                     snap_y = (world_y // TILE_SIZE) * TILE_SIZE
@@ -888,7 +888,7 @@ class TileEditor:
             elif self.current_tab == EditorTab.ENEMIES:
                 # Delete enemy at clicked position
                 world_x = pos[0] + self.camera_x
-                world_y = pos[1] + self.camera_y
+                world_y = pos[1] - self.canvas_rect.y + self.camera_y
                 # Find and remove enemy at this position (within TILE_SIZE range)
                 for i, enemy in enumerate(self.enemies):
                     if abs(enemy.x - world_x) < TILE_SIZE and abs(enemy.y - world_y) < TILE_SIZE:
@@ -898,7 +898,7 @@ class TileEditor:
             elif self.current_tab == EditorTab.OBJECTS:
                 # Delete collectible at clicked position
                 world_x = pos[0] + self.camera_x
-                world_y = pos[1] + self.camera_y
+                world_y = pos[1] - self.canvas_rect.y + self.camera_y
                 for i, collectible in enumerate(self.collectibles):
                     if abs(collectible.x - world_x) < TILE_SIZE and abs(collectible.y - world_y) < TILE_SIZE:
                         self.collectibles.pop(i)
