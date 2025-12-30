@@ -678,6 +678,11 @@ class TileEditor:
                     self.handle_left_release(event.pos)
                 elif event.button == 2:
                     self.dragging_camera = False
+                elif event.button == 3:  # Right click release
+                    # Stop resizing background image
+                    if self.resizing_bg_image:
+                        self.resizing_bg_image = False
+                        self.bg_resize_start_pos = None
             
             elif event.type == pygame.MOUSEMOTION:
                 if self.dragging_viewport and self.viewport_drag_start:
@@ -773,31 +778,17 @@ class TileEditor:
                 self.resize_start_pos = pos
                 return
 
-        # Check if clicking on background layer images (new system)
+        # Check if clicking on background layer images (new system - SIMPLE!)
         if self.current_tab == EditorTab.BACKGROUND and self.canvas_rect.collidepoint(pos):
-            # Check resize handle first (top-left corner) - MUST match drawing code
+            # If there's a selected image, check if clicking on it to drag
             if self.selected_bg_image_index is not None:
                 bg_img = self.background_layers[self.selected_bg_image_index]
                 screen_x = bg_img.x - self.camera_x
                 screen_y = bg_img.y - self.camera_y
-                handle_size = 24  # LARGE handle for easier clicking
-                handle_rect = pygame.Rect(screen_x, screen_y, handle_size, handle_size)
-
-                if handle_rect.collidepoint(pos):
-                    self.resizing_bg_image = True
-                    self.bg_resize_start_pos = pos
-                    return
-
-                # Check if clicking on border (not inside) for dragging - MUST match drawing code
-                border_thickness = 8  # THICK border for easier clicking
                 img_rect = pygame.Rect(screen_x, screen_y, bg_img.width, bg_img.height)
-                inner_rect = pygame.Rect(screen_x + border_thickness,
-                                        screen_y + border_thickness,
-                                        bg_img.width - border_thickness * 2,
-                                        bg_img.height - border_thickness * 2)
 
-                # If click is on image border (not inside), start dragging
-                if img_rect.collidepoint(pos) and not inner_rect.collidepoint(pos):
+                # Left click anywhere on selected image = drag to move
+                if img_rect.collidepoint(pos):
                     self.dragging_bg_image = True
                     self.bg_drag_start_pos = pos
                     return
@@ -917,7 +908,7 @@ class TileEditor:
                         self.enemies.pop(i)
                         break
 
-            else:  # OBJECTS tab
+            elif self.current_tab == EditorTab.OBJECTS:
                 # Delete collectible at clicked position
                 world_x = pos[0] + self.camera_x
                 world_y = pos[1] + self.camera_y
@@ -925,6 +916,19 @@ class TileEditor:
                     if abs(collectible.x - world_x) < TILE_SIZE and abs(collectible.y - world_y) < TILE_SIZE:
                         self.collectibles.pop(i)
                         break
+
+            elif self.current_tab == EditorTab.BACKGROUND:
+                # Right click on selected background image = resize
+                if self.selected_bg_image_index is not None:
+                    bg_img = self.background_layers[self.selected_bg_image_index]
+                    screen_x = bg_img.x - self.camera_x
+                    screen_y = bg_img.y - self.camera_y
+                    img_rect = pygame.Rect(screen_x, screen_y, bg_img.width, bg_img.height)
+
+                    # Right click anywhere on selected image = resize
+                    if img_rect.collidepoint(pos):
+                        self.resizing_bg_image = True
+                        self.bg_resize_start_pos = pos
     
     def handle_mouse_motion(self, pos):
         """Handle mouse motion while drawing, dragging, or resizing"""
@@ -2041,7 +2045,7 @@ class TileEditor:
 
             # Show helpful hint
             if layer_images:
-                hint = self.small_font.render("Click to select & edit in canvas", True, DARK_GRAY)
+                hint = self.small_font.render("L-Click=Move | R-Click=Resize", True, DARK_GRAY)
                 self.screen.blit(hint, (self.palette_rect.x + 10, layer_y))
                 layer_y += 18
 
@@ -2049,10 +2053,10 @@ class TileEditor:
                 hint_text = self.small_font.render("Drag & drop images here", True, DARK_GRAY)
                 self.screen.blit(hint_text, (self.palette_rect.x + 10, layer_y))
                 layer_y += 18
-                hint_text2 = self.small_font.render("Click image to select,", True, DARK_GRAY)
+                hint_text2 = self.small_font.render("Then: L-Click=Move", True, DARK_GRAY)
                 self.screen.blit(hint_text2, (self.palette_rect.x + 10, layer_y))
                 layer_y += 18
-                hint_text3 = self.small_font.render("then drag/resize in canvas", True, DARK_GRAY)
+                hint_text3 = self.small_font.render("R-Click=Resize", True, DARK_GRAY)
                 self.screen.blit(hint_text3, (self.palette_rect.x + 10, layer_y))
             else:
                 for idx, bg_img in enumerate(layer_images):
