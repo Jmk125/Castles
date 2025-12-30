@@ -183,6 +183,7 @@ class BackgroundImage:
     repeat_x: bool = False  # Repeat horizontally
     repeat_y: bool = False  # Repeat vertically
     parallax_factor: float = 0.5  # Parallax scroll speed (0.0 = no scroll, 1.0 = scroll with camera)
+    aspect_ratio_locked: bool = True  # Lock aspect ratio when resizing
 
     def to_dict(self):
         return {
@@ -194,7 +195,8 @@ class BackgroundImage:
             'height': self.height,
             'repeat_x': self.repeat_x,
             'repeat_y': self.repeat_y,
-            'parallax_factor': self.parallax_factor
+            'parallax_factor': self.parallax_factor,
+            'aspect_ratio_locked': self.aspect_ratio_locked
         }
 
 class Tool(Enum):
@@ -689,11 +691,16 @@ class TileEditor:
                     self.viewport_y = max(0, min(self.viewport_y, self.level_height * TILE_SIZE - self.viewport_height))
                     self.viewport_drag_start = event.pos
                 elif self.resizing_viewport and self.viewport_resize_start:
-                    # Resize viewport
+                    # Resize viewport (maintain 16:9 aspect ratio)
                     dx = event.pos[0] - self.viewport_resize_start[0]
                     dy = event.pos[1] - self.viewport_resize_start[1]
-                    self.viewport_width = max(100, self.viewport_width + dx)
-                    self.viewport_height = max(100, self.viewport_height + dy)
+                    # Use the larger of the two deltas to determine size
+                    delta = max(abs(dx), abs(dy)) * (1 if dx + dy > 0 else -1)
+                    new_width = max(160, self.viewport_width + delta)
+                    # Maintain 16:9 aspect ratio
+                    new_height = int(new_width * 9 / 16)
+                    self.viewport_width = new_width
+                    self.viewport_height = new_height
                     self.viewport_resize_start = event.pos
                 elif self.resizing_background and self.resize_start_pos:
                     # Resize background image
@@ -911,8 +918,21 @@ class TileEditor:
             bg_img = self.background_layers[self.selected_bg_image_index]
             dx = pos[0] - self.bg_resize_start_pos[0]
             dy = pos[1] - self.bg_resize_start_pos[1]
-            bg_img.width = max(10, bg_img.width + dx)
-            bg_img.height = max(10, bg_img.height + dy)
+
+            if bg_img.aspect_ratio_locked and bg_img.image:
+                # Maintain aspect ratio
+                original_aspect = bg_img.image.get_width() / bg_img.image.get_height()
+                # Use the larger delta to determine size
+                delta = max(abs(dx), abs(dy)) * (1 if dx + dy > 0 else -1)
+                new_width = max(10, bg_img.width + delta)
+                new_height = int(new_width / original_aspect)
+                bg_img.width = new_width
+                bg_img.height = new_height
+            else:
+                # Free resize
+                bg_img.width = max(10, bg_img.width + dx)
+                bg_img.height = max(10, bg_img.height + dy)
+
             self.bg_resize_start_pos = pos
             return
 
@@ -1181,9 +1201,10 @@ class TileEditor:
                         self.selected_bg_image_index = None
                     return
 
-                # Repeat toggle buttons
+                # Repeat toggle buttons and aspect ratio lock
                 repeat_x_btn = pygame.Rect(item_rect.x + 60, item_rect.y + 40, 35, 15)
                 repeat_y_btn = pygame.Rect(item_rect.x + 100, item_rect.y + 40, 35, 15)
+                aspect_lock_btn = pygame.Rect(item_rect.x + 140, item_rect.y + 40, 50, 15)
 
                 if repeat_x_btn.collidepoint(pos):
                     bg_img.repeat_x = not bg_img.repeat_x
@@ -1191,6 +1212,10 @@ class TileEditor:
 
                 if repeat_y_btn.collidepoint(pos):
                     bg_img.repeat_y = not bg_img.repeat_y
+                    return
+
+                if aspect_lock_btn.collidepoint(pos):
+                    bg_img.aspect_ratio_locked = not bg_img.aspect_ratio_locked
                     return
 
                 # Select this image
@@ -1300,7 +1325,8 @@ class TileEditor:
                     height=image.get_height(),
                     repeat_x=False,
                     repeat_y=False,
-                    parallax_factor=parallax_factor
+                    parallax_factor=parallax_factor,
+                    aspect_ratio_locked=True
                 )
                 self.background_layers.append(bg_img)
                 self.selected_bg_image_index = len(self.background_layers) - 1
@@ -2009,9 +2035,10 @@ class TileEditor:
                     repeat_text = self.small_font.render(repeat_str, True, DARK_GRAY)
                     self.screen.blit(repeat_text, (item_rect.x + 60, item_rect.y + 25))
 
-                    # Repeat toggle buttons
+                    # Repeat toggle buttons and aspect ratio lock
                     repeat_x_btn = pygame.Rect(item_rect.x + 60, item_rect.y + 40, 35, 15)
                     repeat_y_btn = pygame.Rect(item_rect.x + 100, item_rect.y + 40, 35, 15)
+                    aspect_lock_btn = pygame.Rect(item_rect.x + 140, item_rect.y + 40, 50, 15)
 
                     # Repeat X button
                     pygame.draw.rect(self.screen, BLUE if bg_img.repeat_x else WHITE, repeat_x_btn)
@@ -2024,6 +2051,12 @@ class TileEditor:
                     pygame.draw.rect(self.screen, BLACK, repeat_y_btn, 1)
                     ry_text = self.small_font.render("Rep Y", True, BLACK)
                     self.screen.blit(ry_text, (repeat_y_btn.x + 2, repeat_y_btn.y + 1))
+
+                    # Aspect ratio lock button
+                    pygame.draw.rect(self.screen, BLUE if bg_img.aspect_ratio_locked else WHITE, aspect_lock_btn)
+                    pygame.draw.rect(self.screen, BLACK, aspect_lock_btn, 1)
+                    ar_text = self.small_font.render("Lock AR", True, BLACK)
+                    self.screen.blit(ar_text, (aspect_lock_btn.x + 2, aspect_lock_btn.y + 1))
 
                     # Delete button
                     del_button = pygame.Rect(item_rect.x + item_rect.width - 25, item_rect.y + 5, 20, 20)
@@ -2803,7 +2836,8 @@ class TileEditor:
                         height=bg_data['height'],
                         repeat_x=bg_data.get('repeat_x', False),
                         repeat_y=bg_data.get('repeat_y', False),
-                        parallax_factor=bg_data.get('parallax_factor', default_parallax)
+                        parallax_factor=bg_data.get('parallax_factor', default_parallax),
+                        aspect_ratio_locked=bg_data.get('aspect_ratio_locked', True)
                     )
                     self.background_layers.append(bg_img)
 

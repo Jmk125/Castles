@@ -502,6 +502,11 @@ class Level:
         self.background_height = 0
         # Background layers (new parallax system)
         self.background_layers: List[BackgroundImage] = []
+        # Viewport settings (camera starting position and zoom)
+        self.viewport_x = 0
+        self.viewport_y = 0
+        self.viewport_width = SCREEN_WIDTH
+        self.viewport_height = SCREEN_HEIGHT
         self.load_level(filename)
     
     def load_level(self, filename: str):
@@ -658,6 +663,14 @@ class Level:
                     self.background_layers.append(bg_img)
                 except Exception as e:
                     print(f"Error loading background layer: {e}")
+
+        # Load viewport settings
+        if 'viewport' in data:
+            vp_data = data['viewport']
+            self.viewport_x = vp_data.get('x', 0)
+            self.viewport_y = vp_data.get('y', 0)
+            self.viewport_width = vp_data.get('width', SCREEN_WIDTH)
+            self.viewport_height = vp_data.get('height', SCREEN_HEIGHT)
 
     def get_solid_tiles(self):
         """Get all tiles with solid property"""
@@ -1044,8 +1057,9 @@ class Game:
         # Initialize game
         self.level = self.levels[self.current_level_index]
         self.player = Player(100, 100)
-        self.camera_x = 0
-        self.camera_y = 0
+        # Use viewport settings from level to set initial camera position
+        self.camera_x = self.level.viewport_x
+        self.camera_y = self.level.viewport_y
         self.game_over = False
         self.total_score = 0
 
