@@ -1,6 +1,8 @@
 import pygame
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, asdict
@@ -51,6 +53,7 @@ class TileProperty(Enum):
     BACKGROUND = "background"
     LADDER = "ladder"
     END_LEVEL = "end_level"
+    PLAYER_START = "player_start"
 
 # Enemy AI Types
 class EnemyAI(Enum):
@@ -323,6 +326,8 @@ class TileEditor:
         self.new_button_rect = None
         self.open_button_rect = None
         self.save_as_button_rect = None
+        self.play_button_rect = None
+        self.test_level_path = Path(".editor_test_level.json")
         
     def _create_placeholder_tiles(self):
         """Create starter placeholder tiles"""
@@ -343,6 +348,16 @@ class TileEditor:
 
         # Breakable tile
         self.add_tile_type("Breakable", None, [TileProperty.BREAKABLE.value, TileProperty.SOLID.value], ORANGE)
+
+        # Player start tile
+        self.add_tile_type("Player Start", None, [TileProperty.PLAYER_START.value], PURPLE)
+
+    def ensure_player_start_tile_type(self):
+        """Ensure a player start tile type exists (for older levels)."""
+        for tile_type in self.tile_types.values():
+            if TileProperty.PLAYER_START.value in tile_type.properties:
+                return
+        self.add_tile_type("Player Start", None, [TileProperty.PLAYER_START.value], PURPLE)
 
     def _create_placeholder_enemies(self):
         """Create starter enemy types"""
@@ -731,6 +746,10 @@ class TileEditor:
 
         if self.save_as_button_rect and self.save_as_button_rect.collidepoint(pos):
             self.save_level_as_dialog()
+            return
+
+        if self.play_button_rect and self.play_button_rect.collidepoint(pos):
+            self.launch_test_level()
             return
 
         # Check if clicking on viewport controls (in canvas area)
@@ -2794,6 +2813,14 @@ class TileEditor:
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
         print(f"Level saved to {filename}")
+
+    def launch_test_level(self):
+        """Save the current level to a temporary file and launch the game in test mode."""
+        self.save_level(str(self.test_level_path))
+        subprocess.run(
+            [sys.executable, "game.py", "--test-level", str(self.test_level_path)],
+            check=False
+        )
     
     def load_level(self, filename: str):
         """Load a level from JSON"""
@@ -2809,6 +2836,7 @@ class TileEditor:
 
         # Load tile types
         self.tile_types = {}
+        self.next_tile_id = 0
         for tid_str, ttype_data in data['tile_types'].items():
             tid = int(tid_str)
             image = None
@@ -2828,6 +2856,7 @@ class TileEditor:
                 color=tuple(ttype_data['color'])
             )
             self.next_tile_id = max(self.next_tile_id, tid + 1)
+        self.ensure_player_start_tile_type()
 
         # Load tiles
         self.tiles = {'background': {}, 'main': {}, 'foreground': {}}
@@ -3022,6 +3051,16 @@ class TileEditor:
         save_text = self.font.render("Save As", True, BLACK)
         text_rect = save_text.get_rect(center=self.save_as_button_rect.center)
         self.screen.blit(save_text, text_rect)
+
+        # Play button
+        self.play_button_rect = pygame.Rect(button_margin * 4 + button_width * 3,
+                                              (TOP_BAR_HEIGHT - button_height) // 2,
+                                              button_width, button_height)
+        pygame.draw.rect(self.screen, ORANGE, self.play_button_rect)
+        pygame.draw.rect(self.screen, BLACK, self.play_button_rect, 2)
+        play_text = self.font.render("Play", True, BLACK)
+        text_rect = play_text.get_rect(center=self.play_button_rect.center)
+        self.screen.blit(play_text, text_rect)
 
     def run(self):
         """Main game loop"""
