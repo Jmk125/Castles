@@ -17,7 +17,7 @@ FPS = 60
 GRAVITY = 0.5
 MAX_FALL_SPEED = 10
 # Higher values push the player lower on the screen.
-CAMERA_PLAYER_VERTICAL_FRACTION = 0.85
+CAMERA_PLAYER_VERTICAL_FRACTION = 0.9
 
 # Colors
 WHITE = (255, 255, 255)
