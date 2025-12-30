@@ -32,6 +32,7 @@ class TileProperty(Enum):
     HAZARD = "hazard"
     BACKGROUND = "background"
     LADDER = "ladder"
+    END_LEVEL = "end_level"
 
 # Enemy AI Types
 class EnemyAI(Enum):
@@ -82,6 +83,7 @@ class CollectibleType:
     effect: str
     value: int
     color: Tuple[int, int, int]
+    required: bool = False
 
 class Player:
     def __init__(self, x: float, y: float):
@@ -407,6 +409,8 @@ class Level:
         self.collectibles: List[Collectible] = []
         self.score = 0
         self.keys_collected = 0
+        self.required_collectibles_total = 0
+        self.required_collectibles_collected = 0
         self.load_level(filename)
     
     def load_level(self, filename: str):
@@ -502,7 +506,8 @@ class Level:
                     image=image,
                     effect=ctype_data['effect'],
                     value=ctype_data['value'],
-                    color=tuple(ctype_data['color'])
+                    color=tuple(ctype_data['color']),
+                    required=ctype_data.get('required', False)
                 )
 
         # Load collectibles
@@ -516,6 +521,9 @@ class Level:
                         collectible_type=collectible_type
                     )
                     self.collectibles.append(collectible)
+                    # Count required collectibles
+                    if collectible_type.required:
+                        self.required_collectibles_total += 1
     
     def get_solid_tiles(self):
         """Get all tiles with solid property"""
@@ -546,7 +554,21 @@ class Level:
                 if tile_type and TileProperty.HAZARD.value in tile_type.properties:
                     hazard_tiles.append(((tile_x, tile_y), tile))
         return hazard_tiles
-    
+
+    def get_end_level_tiles(self):
+        """Get all tiles with end_level property"""
+        end_level_tiles = []
+        for layer in ['background', 'main', 'foreground']:
+            for (tile_x, tile_y), tile in self.tiles[layer].items():
+                tile_type = self.tile_types.get(tile.tile_type_id)
+                if tile_type and TileProperty.END_LEVEL.value in tile_type.properties:
+                    end_level_tiles.append(((tile_x, tile_y), tile))
+        return end_level_tiles
+
+    def all_required_collectibles_collected(self):
+        """Check if all required collectibles have been collected"""
+        return self.required_collectibles_collected >= self.required_collectibles_total
+
     def get_ladder_tiles(self):
         """Get all tiles with ladder property"""
         ladder_tiles = []
@@ -569,6 +591,11 @@ class Level:
                 if -TILE_SIZE < screen_x < SCREEN_WIDTH and -TILE_SIZE < screen_y < SCREEN_HEIGHT:
                     tile_type = self.tile_types.get(tile.tile_type_id)
                     if tile_type:
+                        # Only show END_LEVEL tiles when all required collectibles are collected
+                        if TileProperty.END_LEVEL.value in tile_type.properties:
+                            if not self.all_required_collectibles_collected():
+                                continue  # Skip drawing END_LEVEL tile
+
                         if tile_type.image:
                             screen.blit(tile_type.image, (screen_x, screen_y))
                         else:
@@ -674,6 +701,10 @@ class Game:
             if player_rect.colliderect(collectible_rect):
                 collectible.collected = True
 
+                # Track required collectibles
+                if collectible.collectible_type.required:
+                    self.level.required_collectibles_collected += 1
+
                 # Apply collectible effect
                 if collectible.collectible_type.effect == CollectibleEffect.HEALTH.value:
                     self.player.health = min(self.player.max_health,
@@ -685,7 +716,33 @@ class Game:
                 elif collectible.collectible_type.effect == CollectibleEffect.POWERUP.value:
                     # Could implement powerups later
                     pass
-    
+
+    def check_end_level_collision(self):
+        """Check if player touches END_LEVEL tile when requirements are met"""
+        # Only check if all required collectibles are collected
+        if not self.level.all_required_collectibles_collected():
+            return False
+
+        player_rect = self.player.get_rect()
+        end_level_tiles = self.level.get_end_level_tiles()
+
+        for (tile_x, tile_y), tile in end_level_tiles:
+            tile_rect = pygame.Rect(tile_x * TILE_SIZE, tile_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+            if player_rect.colliderect(tile_rect):
+                return True
+
+        return False
+
+    def advance_level(self):
+        """Advance to the next level or restart current level"""
+        # For now, just restart the current level
+        # In the future, this could load a different level file
+        print("Level complete! Restarting level...")
+        self.level = Level(self.level.filename)
+        self.player.x = 100
+        self.player.y = 100
+        self.player.health = self.player.max_health
+
     def draw_ui(self):
         """Draw UI elements"""
         # Health bar
@@ -780,6 +837,10 @@ class Game:
             # Check collisions
             self.check_enemy_collisions()
             self.check_collectible_collisions()
+
+            # Check if player completed the level
+            if self.check_end_level_collision():
+                self.advance_level()
 
             self.update_camera()
 
