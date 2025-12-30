@@ -775,12 +775,12 @@ class TileEditor:
 
         # Check if clicking on background layer images (new system)
         if self.current_tab == EditorTab.BACKGROUND and self.canvas_rect.collidepoint(pos):
-            # Check resize handle first (top-left corner)
+            # Check resize handle first (top-left corner) - MUST match drawing code
             if self.selected_bg_image_index is not None:
                 bg_img = self.background_layers[self.selected_bg_image_index]
                 screen_x = bg_img.x - self.camera_x
                 screen_y = bg_img.y - self.camera_y
-                handle_size = 16
+                handle_size = 24  # LARGE handle for easier clicking
                 handle_rect = pygame.Rect(screen_x, screen_y, handle_size, handle_size)
 
                 if handle_rect.collidepoint(pos):
@@ -788,8 +788,8 @@ class TileEditor:
                     self.bg_resize_start_pos = pos
                     return
 
-                # Check if clicking on border (not inside) for dragging
-                border_thickness = 4
+                # Check if clicking on border (not inside) for dragging - MUST match drawing code
+                border_thickness = 8  # THICK border for easier clicking
                 img_rect = pygame.Rect(screen_x, screen_y, bg_img.width, bg_img.height)
                 inner_rect = pygame.Rect(screen_x + border_thickness,
                                         screen_y + border_thickness,
@@ -1545,14 +1545,22 @@ class TileEditor:
                 if self.current_tab == EditorTab.BACKGROUND:
                     bg_img_idx = self.background_layers.index(bg_img)
                     if bg_img_idx == self.selected_bg_image_index:
-                        # Draw selection border (thicker for easier clicking)
-                        border_thickness = 4
+                        # Draw selection border (THICK for easier clicking)
+                        border_thickness = 8
                         pygame.draw.rect(self.screen, GREEN, (screen_x, screen_y, bg_img.width, bg_img.height), border_thickness)
 
-                        # Draw resize handle (top-left corner, green to match border)
-                        handle_size = 16
+                        # Draw resize handle (top-left corner, GREEN and LARGE)
+                        handle_size = 24
                         pygame.draw.rect(self.screen, GREEN, (screen_x, screen_y, handle_size, handle_size))
                         pygame.draw.rect(self.screen, BLACK, (screen_x, screen_y, handle_size, handle_size), 2)
+
+                        # Draw a cross in the handle to make it more obvious
+                        pygame.draw.line(self.screen, BLACK,
+                                       (screen_x + handle_size//4, screen_y + handle_size//2),
+                                       (screen_x + 3*handle_size//4, screen_y + handle_size//2), 2)
+                        pygame.draw.line(self.screen, BLACK,
+                                       (screen_x + handle_size//2, screen_y + handle_size//4),
+                                       (screen_x + handle_size//2, screen_y + 3*handle_size//4), 2)
 
         # Draw grid
         start_x = -(self.camera_x % TILE_SIZE)
