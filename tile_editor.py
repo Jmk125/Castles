@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, asdict
 from enum import Enum
+from tkinter import filedialog
+import tkinter as tk
 
 # Initialize Pygame
 pygame.init()
@@ -46,6 +48,7 @@ class TileProperty(Enum):
     HAZARD = "hazard"
     BACKGROUND = "background"
     LADDER = "ladder"
+    END_LEVEL = "end_level"
 
 # Enemy AI Types
 class EnemyAI(Enum):
@@ -101,6 +104,7 @@ class EnemyType:
     damage: int
     speed: float
     color: Tuple[int, int, int]  # Fallback color
+    behavior_script: Optional[str] = None  # Path to custom behavior .py file
 
     def to_dict(self):
         return {
@@ -111,7 +115,8 @@ class EnemyType:
             'health': self.health,
             'damage': self.damage,
             'speed': self.speed,
-            'color': self.color
+            'color': self.color,
+            'behavior_script': self.behavior_script
         }
 
 @dataclass
@@ -138,6 +143,7 @@ class CollectibleType:
     effect: str  # CollectibleEffect enum value
     value: int  # How much health, score, etc.
     color: Tuple[int, int, int]  # Fallback color
+    required: bool = False  # Required to complete level
 
     def to_dict(self):
         return {
@@ -146,7 +152,8 @@ class CollectibleType:
             'image_path': self.image_path,
             'effect': self.effect,
             'value': self.value,
-            'color': self.color
+            'color': self.color,
+            'required': self.required
         }
 
 @dataclass
@@ -234,15 +241,23 @@ class TileEditor:
         self.editing_tile_id = None
         self.show_property_editor = False
         self.property_checkboxes = {}
-        
+
+        # Enemy/Collectible editor state
+        self.editing_enemy_id = None
+        self.editing_collectible_id = None
+        self.show_enemy_editor = False
+        self.show_collectible_editor = False
+        self.enemy_ai_buttons = {}  # For AI type selection
+        self.collectible_effect_buttons = {}  # For effect type selection
+
         # Font
         self.font = pygame.font.Font(None, 20)
         self.small_font = pygame.font.Font(None, 16)
-        
+
         # Input state for property editor
         self.input_text = ""
         self.input_active = False
-        self.input_field = None  # 'name' or 'color'
+        self.input_field = None  # 'name', 'color', 'health', 'damage', 'speed', 'value', etc.
         
     def _create_placeholder_tiles(self):
         """Create starter placeholder tiles"""
@@ -311,7 +326,7 @@ class TileEditor:
         self.next_tile_id += 1
         return tile_type.id
 
-    def add_enemy_type(self, name: str, image_path: Optional[str], ai_type: str, health: int, damage: int, speed: float, color: Tuple[int, int, int]):
+    def add_enemy_type(self, name: str, image_path: Optional[str], ai_type: str, health: int, damage: int, speed: float, color: Tuple[int, int, int], behavior_script: Optional[str] = None):
         """Add a new enemy type"""
         image = None
         if image_path and os.path.exists(image_path):
@@ -330,13 +345,14 @@ class TileEditor:
             health=health,
             damage=damage,
             speed=speed,
-            color=color
+            color=color,
+            behavior_script=behavior_script
         )
         self.enemy_types[self.next_enemy_type_id] = enemy_type
         self.next_enemy_type_id += 1
         return enemy_type.id
 
-    def add_collectible_type(self, name: str, image_path: Optional[str], effect: str, value: int, color: Tuple[int, int, int]):
+    def add_collectible_type(self, name: str, image_path: Optional[str], effect: str, value: int, color: Tuple[int, int, int], required: bool = False):
         """Add a new collectible type"""
         image = None
         if image_path and os.path.exists(image_path):
@@ -353,7 +369,8 @@ class TileEditor:
             image=image,
             effect=effect,
             value=value,
-            color=color
+            color=color,
+            required=required
         )
         self.collectible_types[self.next_collectible_type_id] = collectible_type
         self.next_collectible_type_id += 1
@@ -361,26 +378,77 @@ class TileEditor:
     
     def apply_input_text(self):
         """Apply text input to the property being edited"""
-        if self.editing_tile_id is None or self.input_field is None:
+        if self.input_field is None:
             return
-        
-        tile_type = self.tile_types.get(self.editing_tile_id)
-        if not tile_type:
-            return
-        
-        if self.input_field == 'name':
-            tile_type.name = self.input_text if self.input_text else tile_type.name
-        elif self.input_field == 'color':
-            try:
-                # Parse color like "255,100,100" or "255 100 100"
-                parts = self.input_text.replace(',', ' ').split()
-                if len(parts) == 3:
-                    r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
-                    if 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255:
-                        tile_type.color = (r, g, b)
-            except:
-                pass
-        
+
+        # Handle tile editing
+        if self.editing_tile_id is not None:
+            tile_type = self.tile_types.get(self.editing_tile_id)
+            if tile_type:
+                if self.input_field == 'name':
+                    tile_type.name = self.input_text if self.input_text else tile_type.name
+                elif self.input_field == 'color':
+                    try:
+                        parts = self.input_text.replace(',', ' ').split()
+                        if len(parts) == 3:
+                            r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+                            if 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255:
+                                tile_type.color = (r, g, b)
+                    except:
+                        pass
+
+        # Handle enemy editing
+        elif self.editing_enemy_id is not None:
+            enemy_type = self.enemy_types.get(self.editing_enemy_id)
+            if enemy_type:
+                if self.input_field == 'name':
+                    enemy_type.name = self.input_text if self.input_text else enemy_type.name
+                elif self.input_field == 'health':
+                    try:
+                        enemy_type.health = max(1, int(self.input_text))
+                    except:
+                        pass
+                elif self.input_field == 'damage':
+                    try:
+                        enemy_type.damage = max(0, int(self.input_text))
+                    except:
+                        pass
+                elif self.input_field == 'speed':
+                    try:
+                        enemy_type.speed = max(0.0, float(self.input_text))
+                    except:
+                        pass
+                elif self.input_field == 'color':
+                    try:
+                        parts = self.input_text.replace(',', ' ').split()
+                        if len(parts) == 3:
+                            r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+                            if 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255:
+                                enemy_type.color = (r, g, b)
+                    except:
+                        pass
+
+        # Handle collectible editing
+        elif self.editing_collectible_id is not None:
+            collectible_type = self.collectible_types.get(self.editing_collectible_id)
+            if collectible_type:
+                if self.input_field == 'name':
+                    collectible_type.name = self.input_text if self.input_text else collectible_type.name
+                elif self.input_field == 'value':
+                    try:
+                        collectible_type.value = max(0, int(self.input_text))
+                    except:
+                        pass
+                elif self.input_field == 'color':
+                    try:
+                        parts = self.input_text.replace(',', ' ').split()
+                        if len(parts) == 3:
+                            r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+                            if 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255:
+                                collectible_type.color = (r, g, b)
+                    except:
+                        pass
+
         self.input_text = ""
         self.input_field = None
         
@@ -658,7 +726,40 @@ class TileEditor:
                 self.show_property_editor = False
                 self.editing_tile_id = None
                 self.input_active = False
-                # Fall through to handle normal palette clicks
+                return
+
+        # Check if clicking in enemy editor dialog
+        if self.show_enemy_editor:
+            editor_x = self.palette_rect.x + 20
+            editor_y = 100
+            editor_width = self.palette_width - 40
+            editor_height = 550
+            editor_rect = pygame.Rect(editor_x, editor_y, editor_width, editor_height)
+
+            if editor_rect.collidepoint(pos):
+                self.handle_enemy_editor_click(pos)
+                return
+            else:
+                self.show_enemy_editor = False
+                self.editing_enemy_id = None
+                self.input_active = False
+                return
+
+        # Check if clicking in collectible editor dialog
+        if self.show_collectible_editor:
+            editor_x = self.palette_rect.x + 20
+            editor_y = 100
+            editor_width = self.palette_width - 40
+            editor_height = 500
+            editor_rect = pygame.Rect(editor_x, editor_y, editor_width, editor_height)
+
+            if editor_rect.collidepoint(pos):
+                self.handle_collectible_editor_click(pos)
+                return
+            else:
+                self.show_collectible_editor = False
+                self.editing_collectible_id = None
+                self.input_active = False
                 return
 
         # Check tab buttons
@@ -767,7 +868,20 @@ class TileEditor:
 
                 item_rect = pygame.Rect(self.palette_rect.x + 10, item_y, self.palette_width - 20, 60)
 
-                if item_rect.collidepoint(pos):
+                if not item_rect.collidepoint(pos):
+                    item_y += 70
+                    continue
+
+                # Edit button
+                edit_button = pygame.Rect(item_rect.x + item_rect.width - 55, item_rect.y + 5, 50, 20)
+
+                if edit_button.collidepoint(pos):
+                    self.editing_enemy_id = enemy_id
+                    self.show_enemy_editor = True
+                    # Initialize AI buttons
+                    self.enemy_ai_buttons = {ai.value: ai.value == enemy_type.ai_type for ai in EnemyAI}
+                    return
+                else:
                     self.current_enemy_type_id = enemy_id
                     return
 
@@ -782,7 +896,20 @@ class TileEditor:
 
                 item_rect = pygame.Rect(self.palette_rect.x + 10, item_y, self.palette_width - 20, 60)
 
-                if item_rect.collidepoint(pos):
+                if not item_rect.collidepoint(pos):
+                    item_y += 70
+                    continue
+
+                # Edit button
+                edit_button = pygame.Rect(item_rect.x + item_rect.width - 55, item_rect.y + 5, 50, 20)
+
+                if edit_button.collidepoint(pos):
+                    self.editing_collectible_id = collectible_id
+                    self.show_collectible_editor = True
+                    # Initialize effect buttons
+                    self.collectible_effect_buttons = {effect.value: effect.value == collectible_type.effect for effect in CollectibleEffect}
+                    return
+                else:
                     self.current_collectible_type_id = collectible_id
                     return
 
@@ -840,10 +967,22 @@ class TileEditor:
             y += 25
     
     def handle_file_drop(self, filepath):
-        """Handle file drop for adding new tiles or replacing tile images"""
+        """Handle file drop for adding new tiles, replacing tile images, or adding behavior scripts"""
+        # Handle .py files for enemy behavior scripts
+        if filepath.lower().endswith('.py'):
+            if self.show_enemy_editor and self.editing_enemy_id is not None:
+                enemy_type = self.enemy_types.get(self.editing_enemy_id)
+                if enemy_type:
+                    enemy_type.behavior_script = filepath
+                    print(f"Added behavior script to {enemy_type.name}: {filepath}")
+                return
+            else:
+                print("Drop .py files when enemy editor is open to add behavior scripts")
+                return
+
         if not filepath.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
             return
-        
+
         # Get mouse position to see where the file was dropped
         mouse_pos = pygame.mouse.get_pos()
         
@@ -894,7 +1033,28 @@ class TileEditor:
         name = Path(filepath).stem.replace('_', ' ').title()
         self.add_tile_type(name, filepath, [TileProperty.SOLID.value], GRAY)
         print(f"Added new tile: {name}")
-    
+
+    def select_behavior_script(self):
+        """Open file dialog to select a .py behavior script"""
+        # Create a hidden root window
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+
+        # Open file dialog
+        filepath = filedialog.askopenfilename(
+            title="Select Behavior Script",
+            filetypes=[("Python files", "*.py"), ("All files", "*.*")]
+        )
+
+        root.destroy()
+
+        if filepath and self.editing_enemy_id is not None:
+            enemy_type = self.enemy_types.get(self.editing_enemy_id)
+            if enemy_type:
+                enemy_type.behavior_script = filepath
+                print(f"Selected behavior script: {filepath}")
+
     def draw_canvas(self):
         """Draw the main canvas area"""
         # Draw background
@@ -1255,6 +1415,13 @@ class TileEditor:
                 stats_text = self.small_font.render(f"HP:{enemy_type.health} DMG:{enemy_type.damage}", True, DARK_GRAY)
                 self.screen.blit(stats_text, (item_rect.x + 45, item_rect.y + 25))
 
+                # Edit button
+                edit_button = pygame.Rect(item_rect.x + item_rect.width - 55, item_rect.y + 5, 50, 20)
+                pygame.draw.rect(self.screen, YELLOW, edit_button)
+                pygame.draw.rect(self.screen, BLACK, edit_button, 1)
+                edit_text = self.small_font.render("Edit", True, BLACK)
+                self.screen.blit(edit_text, (edit_button.x + 10, edit_button.y + 2))
+
                 item_y += 70
 
         else:  # OBJECTS tab
@@ -1293,19 +1460,35 @@ class TileEditor:
                 name_text = self.small_font.render(collectible_type.name[:15], True, BLACK)
                 self.screen.blit(name_text, (item_rect.x + 45, item_rect.y + 5))
 
-                # Effect
-                effect_text = self.small_font.render(f"{collectible_type.effect}: +{collectible_type.value}", True, DARK_GRAY)
+                # Effect - show required marker
+                req_marker = "[REQ] " if collectible_type.required else ""
+                effect_text = self.small_font.render(f"{req_marker}{collectible_type.effect}: +{collectible_type.value}", True, DARK_GRAY)
                 self.screen.blit(effect_text, (item_rect.x + 45, item_rect.y + 25))
+
+                # Edit button
+                edit_button = pygame.Rect(item_rect.x + item_rect.width - 55, item_rect.y + 5, 50, 20)
+                pygame.draw.rect(self.screen, YELLOW, edit_button)
+                pygame.draw.rect(self.screen, BLACK, edit_button, 1)
+                edit_text = self.small_font.render("Edit", True, BLACK)
+                self.screen.blit(edit_text, (edit_button.x + 10, edit_button.y + 2))
 
                 item_y += 70
 
         # Reset clipping
         self.screen.set_clip(None)
-        
+
         # Draw property editor if open
         if self.show_property_editor and self.editing_tile_id is not None:
             self.draw_property_editor()
-        
+
+        # Draw enemy editor if open
+        if self.show_enemy_editor and self.editing_enemy_id is not None:
+            self.draw_enemy_editor()
+
+        # Draw collectible editor if open
+        if self.show_collectible_editor and self.editing_collectible_id is not None:
+            self.draw_collectible_editor()
+
         # Instructions at bottom
         instructions = [
             "Ctrl+S: Save",
@@ -1419,7 +1602,408 @@ class TileEditor:
             prop_text = self.small_font.render(prop.value.title(), True, BLACK)
             self.screen.blit(prop_text, (editor_x + 30, y))
             y += 25
-    
+
+    def draw_enemy_editor(self):
+        """Draw the enemy editor dialog"""
+        if self.editing_enemy_id is None:
+            return
+
+        enemy_type = self.enemy_types.get(self.editing_enemy_id)
+        if not enemy_type:
+            return
+
+        # Semi-transparent overlay
+        overlay = pygame.Surface((self.palette_width, SCREEN_HEIGHT))
+        overlay.set_alpha(200)
+        overlay.fill(LIGHT_GRAY)
+        self.screen.blit(overlay, (self.palette_rect.x, 0))
+
+        # Editor box
+        editor_x = self.palette_rect.x + 20
+        editor_y = 100
+        editor_width = self.palette_width - 40
+        editor_height = 550
+
+        pygame.draw.rect(self.screen, WHITE, (editor_x, editor_y, editor_width, editor_height))
+        pygame.draw.rect(self.screen, BLACK, (editor_x, editor_y, editor_width, editor_height), 2)
+
+        # Title
+        title = self.font.render("Edit Enemy", True, BLACK)
+        self.screen.blit(title, (editor_x + 10, editor_y + 10))
+
+        # Close button
+        close_button = pygame.Rect(editor_x + editor_width - 60, editor_y + 10, 50, 25)
+        pygame.draw.rect(self.screen, RED, close_button)
+        pygame.draw.rect(self.screen, BLACK, close_button, 1)
+        close_text = self.small_font.render("Close", True, BLACK)
+        self.screen.blit(close_text, (close_button.x + 8, close_button.y + 5))
+
+        y = editor_y + 45
+
+        # Name field
+        name_label = self.small_font.render("Name:", True, BLACK)
+        self.screen.blit(name_label, (editor_x + 10, y))
+        y += 20
+        name_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'name') else YELLOW, name_field)
+        pygame.draw.rect(self.screen, BLACK, name_field, 1)
+        name_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'name') else enemy_type.name, True, BLACK)
+        self.screen.blit(name_text, (name_field.x + 5, name_field.y + 5))
+        y += 35
+
+        # Health field
+        health_label = self.small_font.render("Health:", True, BLACK)
+        self.screen.blit(health_label, (editor_x + 10, y))
+        y += 20
+        health_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'health') else YELLOW, health_field)
+        pygame.draw.rect(self.screen, BLACK, health_field, 1)
+        health_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'health') else str(enemy_type.health), True, BLACK)
+        self.screen.blit(health_text, (health_field.x + 5, health_field.y + 5))
+        y += 35
+
+        # Damage field
+        damage_label = self.small_font.render("Damage:", True, BLACK)
+        self.screen.blit(damage_label, (editor_x + 10, y))
+        y += 20
+        damage_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'damage') else YELLOW, damage_field)
+        pygame.draw.rect(self.screen, BLACK, damage_field, 1)
+        damage_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'damage') else str(enemy_type.damage), True, BLACK)
+        self.screen.blit(damage_text, (damage_field.x + 5, damage_field.y + 5))
+        y += 35
+
+        # Speed field
+        speed_label = self.small_font.render("Speed:", True, BLACK)
+        self.screen.blit(speed_label, (editor_x + 10, y))
+        y += 20
+        speed_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'speed') else YELLOW, speed_field)
+        pygame.draw.rect(self.screen, BLACK, speed_field, 1)
+        speed_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'speed') else str(enemy_type.speed), True, BLACK)
+        self.screen.blit(speed_text, (speed_field.x + 5, speed_field.y + 5))
+        y += 35
+
+        # Color field
+        color_label = self.small_font.render("Color (R,G,B):", True, BLACK)
+        self.screen.blit(color_label, (editor_x + 10, y))
+        y += 20
+        color_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'color') else YELLOW, color_field)
+        pygame.draw.rect(self.screen, BLACK, color_field, 1)
+        color_display = self.input_text if (self.input_active and self.input_field == 'color') else f"{enemy_type.color[0]},{enemy_type.color[1]},{enemy_type.color[2]}"
+        color_text = self.small_font.render(color_display, True, BLACK)
+        self.screen.blit(color_text, (color_field.x + 5, color_field.y + 5))
+        y += 35
+
+        # AI Type buttons
+        ai_label = self.font.render("AI Type:", True, BLACK)
+        self.screen.blit(ai_label, (editor_x + 10, y))
+        y += 25
+        for ai in EnemyAI:
+            ai_button = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            is_selected = self.enemy_ai_buttons.get(ai.value, False)
+            pygame.draw.rect(self.screen, BLUE if is_selected else WHITE, ai_button)
+            pygame.draw.rect(self.screen, BLACK, ai_button, 1)
+            ai_text = self.small_font.render(ai.value.title(), True, BLACK)
+            self.screen.blit(ai_text, (ai_button.x + 5, ai_button.y + 5))
+            y += 30
+
+        # Behavior script section
+        script_label = self.small_font.render("Behavior Script:", True, BLACK)
+        self.screen.blit(script_label, (editor_x + 10, y))
+        y += 20
+
+        # Display current script path
+        script_display = enemy_type.behavior_script if enemy_type.behavior_script else "None"
+        if enemy_type.behavior_script:
+            # Show just the filename if path is too long
+            script_filename = os.path.basename(enemy_type.behavior_script)
+            script_text = self.small_font.render(script_filename[:30], True, BLACK)
+        else:
+            script_text = self.small_font.render("None (drag .py file or click Select)", True, DARK_GRAY)
+        self.screen.blit(script_text, (editor_x + 10, y))
+        y += 25
+
+        # Select file button
+        select_button = pygame.Rect(editor_x + 10, y, 100, 25)
+        pygame.draw.rect(self.screen, GREEN, select_button)
+        pygame.draw.rect(self.screen, BLACK, select_button, 1)
+        select_text = self.small_font.render("Select File", True, BLACK)
+        self.screen.blit(select_text, (select_button.x + 10, select_button.y + 5))
+
+        # Clear button (only show if a script is set)
+        if enemy_type.behavior_script:
+            clear_button = pygame.Rect(editor_x + 120, y, 80, 25)
+            pygame.draw.rect(self.screen, RED, clear_button)
+            pygame.draw.rect(self.screen, BLACK, clear_button, 1)
+            clear_text = self.small_font.render("Clear", True, BLACK)
+            self.screen.blit(clear_text, (clear_button.x + 20, clear_button.y + 5))
+
+    def draw_collectible_editor(self):
+        """Draw the collectible editor dialog"""
+        if self.editing_collectible_id is None:
+            return
+
+        collectible_type = self.collectible_types.get(self.editing_collectible_id)
+        if not collectible_type:
+            return
+
+        # Semi-transparent overlay
+        overlay = pygame.Surface((self.palette_width, SCREEN_HEIGHT))
+        overlay.set_alpha(200)
+        overlay.fill(LIGHT_GRAY)
+        self.screen.blit(overlay, (self.palette_rect.x, 0))
+
+        # Editor box
+        editor_x = self.palette_rect.x + 20
+        editor_y = 100
+        editor_width = self.palette_width - 40
+        editor_height = 500
+
+        pygame.draw.rect(self.screen, WHITE, (editor_x, editor_y, editor_width, editor_height))
+        pygame.draw.rect(self.screen, BLACK, (editor_x, editor_y, editor_width, editor_height), 2)
+
+        # Title
+        title = self.font.render("Edit Collectible", True, BLACK)
+        self.screen.blit(title, (editor_x + 10, editor_y + 10))
+
+        # Close button
+        close_button = pygame.Rect(editor_x + editor_width - 60, editor_y + 10, 50, 25)
+        pygame.draw.rect(self.screen, RED, close_button)
+        pygame.draw.rect(self.screen, BLACK, close_button, 1)
+        close_text = self.small_font.render("Close", True, BLACK)
+        self.screen.blit(close_text, (close_button.x + 8, close_button.y + 5))
+
+        y = editor_y + 45
+
+        # Name field
+        name_label = self.small_font.render("Name:", True, BLACK)
+        self.screen.blit(name_label, (editor_x + 10, y))
+        y += 20
+        name_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'name') else YELLOW, name_field)
+        pygame.draw.rect(self.screen, BLACK, name_field, 1)
+        name_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'name') else collectible_type.name, True, BLACK)
+        self.screen.blit(name_text, (name_field.x + 5, name_field.y + 5))
+        y += 35
+
+        # Value field
+        value_label = self.small_font.render("Value:", True, BLACK)
+        self.screen.blit(value_label, (editor_x + 10, y))
+        y += 20
+        value_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'value') else YELLOW, value_field)
+        pygame.draw.rect(self.screen, BLACK, value_field, 1)
+        value_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'value') else str(collectible_type.value), True, BLACK)
+        self.screen.blit(value_text, (value_field.x + 5, value_field.y + 5))
+        y += 35
+
+        # Color field
+        color_label = self.small_font.render("Color (R,G,B):", True, BLACK)
+        self.screen.blit(color_label, (editor_x + 10, y))
+        y += 20
+        color_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'color') else YELLOW, color_field)
+        pygame.draw.rect(self.screen, BLACK, color_field, 1)
+        color_display = self.input_text if (self.input_active and self.input_field == 'color') else f"{collectible_type.color[0]},{collectible_type.color[1]},{collectible_type.color[2]}"
+        color_text = self.small_font.render(color_display, True, BLACK)
+        self.screen.blit(color_text, (color_field.x + 5, color_field.y + 5))
+        y += 35
+
+        # Effect Type buttons
+        effect_label = self.font.render("Effect Type:", True, BLACK)
+        self.screen.blit(effect_label, (editor_x + 10, y))
+        y += 25
+        for effect in CollectibleEffect:
+            effect_button = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            is_selected = self.collectible_effect_buttons.get(effect.value, False)
+            pygame.draw.rect(self.screen, BLUE if is_selected else WHITE, effect_button)
+            pygame.draw.rect(self.screen, BLACK, effect_button, 1)
+            effect_text = self.small_font.render(effect.value.title(), True, BLACK)
+            self.screen.blit(effect_text, (effect_button.x + 5, effect_button.y + 5))
+            y += 30
+
+        # Required checkbox
+        required_checkbox = pygame.Rect(editor_x + 10, y, 15, 15)
+        pygame.draw.rect(self.screen, WHITE, required_checkbox)
+        pygame.draw.rect(self.screen, BLACK, required_checkbox, 1)
+        if collectible_type.required:
+            pygame.draw.line(self.screen, BLACK, required_checkbox.topleft, required_checkbox.bottomright, 2)
+            pygame.draw.line(self.screen, BLACK, required_checkbox.topright, required_checkbox.bottomleft, 2)
+        required_text = self.small_font.render("Required to complete level", True, BLACK)
+        self.screen.blit(required_text, (editor_x + 30, y))
+
+    def handle_enemy_editor_click(self, pos):
+        """Handle clicks in the enemy editor dialog"""
+        if self.editing_enemy_id is None:
+            return
+
+        enemy_type = self.enemy_types.get(self.editing_enemy_id)
+        if not enemy_type:
+            return
+
+        editor_x = self.palette_rect.x + 20
+        editor_y = 100
+        editor_width = self.palette_width - 40
+
+        # Close button
+        close_button = pygame.Rect(editor_x + editor_width - 60, editor_y + 10, 50, 25)
+        if close_button.collidepoint(pos):
+            self.show_enemy_editor = False
+            self.editing_enemy_id = None
+            self.input_active = False
+            return
+
+        y = editor_y + 45
+
+        # Name field
+        y += 20
+        name_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        if name_field.collidepoint(pos):
+            self.input_active = True
+            self.input_field = 'name'
+            self.input_text = enemy_type.name
+            return
+        y += 35
+
+        # Health field
+        y += 20
+        health_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        if health_field.collidepoint(pos):
+            self.input_active = True
+            self.input_field = 'health'
+            self.input_text = str(enemy_type.health)
+            return
+        y += 35
+
+        # Damage field
+        y += 20
+        damage_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        if damage_field.collidepoint(pos):
+            self.input_active = True
+            self.input_field = 'damage'
+            self.input_text = str(enemy_type.damage)
+            return
+        y += 35
+
+        # Speed field
+        y += 20
+        speed_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        if speed_field.collidepoint(pos):
+            self.input_active = True
+            self.input_field = 'speed'
+            self.input_text = str(enemy_type.speed)
+            return
+        y += 35
+
+        # Color field
+        y += 20
+        color_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        if color_field.collidepoint(pos):
+            self.input_active = True
+            self.input_field = 'color'
+            self.input_text = f"{enemy_type.color[0]},{enemy_type.color[1]},{enemy_type.color[2]}"
+            return
+        y += 35
+
+        # AI Type buttons
+        y += 25
+        for ai in EnemyAI:
+            ai_button = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            if ai_button.collidepoint(pos):
+                enemy_type.ai_type = ai.value
+                self.enemy_ai_buttons = {a.value: a.value == ai.value for a in EnemyAI}
+                return
+            y += 30
+
+        # Behavior script buttons
+        y += 20  # script label
+        y += 25  # script display
+
+        # Select file button
+        select_button = pygame.Rect(editor_x + 10, y, 100, 25)
+        if select_button.collidepoint(pos):
+            self.select_behavior_script()
+            return
+
+        # Clear button (only if script is set)
+        if enemy_type.behavior_script:
+            clear_button = pygame.Rect(editor_x + 120, y, 80, 25)
+            if clear_button.collidepoint(pos):
+                enemy_type.behavior_script = None
+                print("Cleared behavior script")
+                return
+
+    def handle_collectible_editor_click(self, pos):
+        """Handle clicks in the collectible editor dialog"""
+        if self.editing_collectible_id is None:
+            return
+
+        collectible_type = self.collectible_types.get(self.editing_collectible_id)
+        if not collectible_type:
+            return
+
+        editor_x = self.palette_rect.x + 20
+        editor_y = 100
+        editor_width = self.palette_width - 40
+
+        # Close button
+        close_button = pygame.Rect(editor_x + editor_width - 60, editor_y + 10, 50, 25)
+        if close_button.collidepoint(pos):
+            self.show_collectible_editor = False
+            self.editing_collectible_id = None
+            self.input_active = False
+            return
+
+        y = editor_y + 45
+
+        # Name field
+        y += 20
+        name_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        if name_field.collidepoint(pos):
+            self.input_active = True
+            self.input_field = 'name'
+            self.input_text = collectible_type.name
+            return
+        y += 35
+
+        # Value field
+        y += 20
+        value_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        if value_field.collidepoint(pos):
+            self.input_active = True
+            self.input_field = 'value'
+            self.input_text = str(collectible_type.value)
+            return
+        y += 35
+
+        # Color field
+        y += 20
+        color_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+        if color_field.collidepoint(pos):
+            self.input_active = True
+            self.input_field = 'color'
+            self.input_text = f"{collectible_type.color[0]},{collectible_type.color[1]},{collectible_type.color[2]}"
+            return
+        y += 35
+
+        # Effect Type buttons
+        y += 25
+        for effect in CollectibleEffect:
+            effect_button = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            if effect_button.collidepoint(pos):
+                collectible_type.effect = effect.value
+                self.collectible_effect_buttons = {e.value: e.value == effect.value for e in CollectibleEffect}
+                return
+            y += 30
+
+        # Required checkbox
+        required_checkbox = pygame.Rect(editor_x + 10, y, 15, 15)
+        if required_checkbox.collidepoint(pos):
+            collectible_type.required = not collectible_type.required
+            return
+
     def save_level(self, filename: str):
         """Save the current level to JSON"""
         data = {
@@ -1506,7 +2090,8 @@ class TileEditor:
                     health=etype_data['health'],
                     damage=etype_data['damage'],
                     speed=etype_data['speed'],
-                    color=tuple(etype_data['color'])
+                    color=tuple(etype_data['color']),
+                    behavior_script=etype_data.get('behavior_script')
                 )
                 self.next_enemy_type_id = max(self.next_enemy_type_id, eid + 1)
 
@@ -1541,7 +2126,8 @@ class TileEditor:
                     image=image,
                     effect=ctype_data['effect'],
                     value=ctype_data['value'],
-                    color=tuple(ctype_data['color'])
+                    color=tuple(ctype_data['color']),
+                    required=ctype_data.get('required', False)
                 )
                 self.next_collectible_type_id = max(self.next_collectible_type_id, cid + 1)
 
