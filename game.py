@@ -102,6 +102,8 @@ class BackgroundImage:
     y: int
     width: int
     height: int
+    repeat_x: bool
+    repeat_y: bool
     parallax_factor: float
 
 class Player:
@@ -650,15 +652,19 @@ class Level:
                     if image_path and os.path.exists(image_path):
                         image = pygame.image.load(image_path)
 
+                    layer_idx = bg_data['layer_index']
+                    default_parallax = 0.1 + (layer_idx * 0.2)
                     bg_img = BackgroundImage(
-                        layer_index=bg_data['layer_index'],
+                        layer_index=layer_idx,
                         image_path=image_path,
                         image=image,
                         x=bg_data['x'],
                         y=bg_data['y'],
                         width=bg_data['width'],
                         height=bg_data['height'],
-                        parallax_factor=bg_data['parallax_factor']
+                        repeat_x=bg_data.get('repeat_x', False),
+                        repeat_y=bg_data.get('repeat_y', False),
+                        parallax_factor=bg_data.get('parallax_factor', default_parallax)
                     )
                     self.background_layers.append(bg_img)
                 except Exception as e:
@@ -744,7 +750,37 @@ class Level:
 
                 # Scale and draw the background
                 scaled_bg = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
-                screen.blit(scaled_bg, (parallax_x, parallax_y))
+                if bg_img.repeat_x or bg_img.repeat_y:
+                    tile_width = bg_img.width
+                    tile_height = bg_img.height
+                    start_x = parallax_x
+                    start_y = parallax_y
+
+                    if bg_img.repeat_x and tile_width > 0:
+                        start_x = (parallax_x % tile_width) - tile_width
+                    if bg_img.repeat_y and tile_height > 0:
+                        start_y = (parallax_y % tile_height) - tile_height
+
+                    if bg_img.repeat_x and bg_img.repeat_y:
+                        tile_x = start_x
+                        while tile_x < SCREEN_WIDTH:
+                            tile_y = start_y
+                            while tile_y < SCREEN_HEIGHT:
+                                screen.blit(scaled_bg, (tile_x, tile_y))
+                                tile_y += tile_height
+                            tile_x += tile_width
+                    elif bg_img.repeat_x:
+                        tile_x = start_x
+                        while tile_x < SCREEN_WIDTH:
+                            screen.blit(scaled_bg, (tile_x, parallax_y))
+                            tile_x += tile_width
+                    elif bg_img.repeat_y:
+                        tile_y = start_y
+                        while tile_y < SCREEN_HEIGHT:
+                            screen.blit(scaled_bg, (parallax_x, tile_y))
+                            tile_y += tile_height
+                else:
+                    screen.blit(scaled_bg, (parallax_x, parallax_y))
 
         # Draw legacy background image if loaded (for backwards compatibility)
         if self.background_image and self.background_width > 0 and self.background_height > 0:
