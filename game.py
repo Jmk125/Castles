@@ -33,6 +33,20 @@ class TileProperty(Enum):
     BACKGROUND = "background"
     LADDER = "ladder"
 
+# Enemy AI Types
+class EnemyAI(Enum):
+    STATIONARY = "stationary"
+    PATROL = "patrol"
+    CHASE = "chase"
+    FLYING = "flying"
+
+# Collectible Types
+class CollectibleEffect(Enum):
+    HEALTH = "health"
+    SCORE = "score"
+    KEY = "key"
+    POWERUP = "powerup"
+
 @dataclass
 class TileType:
     id: int
@@ -46,6 +60,28 @@ class TileType:
 class Tile:
     tile_type_id: int
     layer: str
+
+@dataclass
+class EnemyType:
+    id: int
+    name: str
+    image_path: Optional[str]
+    image: Optional[pygame.Surface]
+    ai_type: str
+    health: int
+    damage: int
+    speed: float
+    color: Tuple[int, int, int]
+
+@dataclass
+class CollectibleType:
+    id: int
+    name: str
+    image_path: Optional[str]
+    image: Optional[pygame.Surface]
+    effect: str
+    value: int
+    color: Tuple[int, int, int]
 
 class Player:
     def __init__(self, x: float, y: float):
@@ -210,12 +246,149 @@ class Player:
         
         # Draw simple rectangle for now (can be replaced with sprite later)
         pygame.draw.rect(screen, RED, (draw_x, draw_y, self.width, self.height))
-        
+
         # Draw direction indicator
         if self.facing_right:
             pygame.draw.rect(screen, WHITE, (draw_x + self.width - 3, draw_y + 5, 3, 3))
         else:
             pygame.draw.rect(screen, WHITE, (draw_x, draw_y + 5, 3, 3))
+
+class Enemy:
+    def __init__(self, x: int, y: int, enemy_type: EnemyType, patrol_range: int = 100):
+        self.x = float(x)
+        self.y = float(y)
+        self.enemy_type = enemy_type
+        self.patrol_range = patrol_range
+        self.width = TILE_SIZE
+        self.height = TILE_SIZE
+        self.health = enemy_type.health
+        self.vel_x = 0
+        self.vel_y = 0
+        self.direction = 1  # 1 for right, -1 for left
+        self.start_x = x  # For patrol AI
+        self.alive = True
+
+    def get_rect(self) -> pygame.Rect:
+        return pygame.Rect(int(self.x), int(self.y), self.width, self.height)
+
+    def update(self, player, level):
+        """Update enemy AI and physics"""
+        if not self.alive:
+            return
+
+        # AI behavior based on type
+        if self.enemy_type.ai_type == EnemyAI.STATIONARY.value:
+            # Don't move
+            pass
+
+        elif self.enemy_type.ai_type == EnemyAI.PATROL.value:
+            # Move back and forth within patrol range
+            self.vel_x = self.enemy_type.speed * self.direction
+
+            # Check if reached patrol boundary
+            if self.x >= self.start_x + self.patrol_range:
+                self.direction = -1
+            elif self.x <= self.start_x - self.patrol_range:
+                self.direction = 1
+
+            # Apply horizontal movement
+            self.x += self.vel_x
+
+            # Apply gravity if not flying
+            self.vel_y += GRAVITY
+            if self.vel_y > MAX_FALL_SPEED:
+                self.vel_y = MAX_FALL_SPEED
+
+            self.y += self.vel_y
+
+            # Simple ground collision (enemies don't need full collision like player)
+            for (tile_x, tile_y), tile in level.get_solid_tiles():
+                tile_rect = pygame.Rect(tile_x * TILE_SIZE, tile_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                enemy_rect = self.get_rect()
+
+                if enemy_rect.colliderect(tile_rect):
+                    if self.vel_y > 0:  # Falling
+                        self.y = tile_rect.top - self.height
+                        self.vel_y = 0
+
+        elif self.enemy_type.ai_type == EnemyAI.CHASE.value:
+            # Move towards player
+            dx = player.x - self.x
+            dy = player.y - self.y
+            distance = (dx**2 + dy**2) ** 0.5
+
+            if distance > 0:
+                self.vel_x = (dx / distance) * self.enemy_type.speed
+                self.vel_y = (dy / distance) * self.enemy_type.speed
+                self.x += self.vel_x
+                self.y += self.vel_y
+
+        elif self.enemy_type.ai_type == EnemyAI.FLYING.value:
+            # Flying chase - similar to chase but with vertical movement
+            dx = player.x - self.x
+            dy = player.y - self.y
+            distance = (dx**2 + dy**2) ** 0.5
+
+            if distance > 0 and distance < 300:  # Only chase if within range
+                self.vel_x = (dx / distance) * self.enemy_type.speed
+                self.vel_y = (dy / distance) * self.enemy_type.speed
+                self.x += self.vel_x
+                self.y += self.vel_y
+
+    def take_damage(self, amount: int):
+        """Take damage and check if dead"""
+        self.health -= amount
+        if self.health <= 0:
+            self.alive = False
+
+    def draw(self, screen, camera_x, camera_y):
+        """Draw the enemy"""
+        if not self.alive:
+            return
+
+        draw_x = int(self.x - camera_x)
+        draw_y = int(self.y - camera_y)
+
+        if self.enemy_type.image:
+            screen.blit(self.enemy_type.image, (draw_x, draw_y))
+        else:
+            pygame.draw.rect(screen, self.enemy_type.color, (draw_x, draw_y, self.width, self.height))
+
+        # Draw health bar for enemies with finite health
+        if self.enemy_type.health < 999:
+            bar_width = TILE_SIZE
+            bar_height = 3
+            health_ratio = self.health / self.enemy_type.health
+            pygame.draw.rect(screen, RED, (draw_x, draw_y - 5, bar_width, bar_height))
+            pygame.draw.rect(screen, GREEN, (draw_x, draw_y - 5, int(bar_width * health_ratio), bar_height))
+
+class Collectible:
+    def __init__(self, x: int, y: int, collectible_type: CollectibleType):
+        self.x = x
+        self.y = y
+        self.collectible_type = collectible_type
+        self.width = TILE_SIZE
+        self.height = TILE_SIZE
+        self.collected = False
+
+    def get_rect(self) -> pygame.Rect:
+        return pygame.Rect(self.x, self.y, self.width, self.height)
+
+    def draw(self, screen, camera_x, camera_y):
+        """Draw the collectible"""
+        if self.collected:
+            return
+
+        draw_x = int(self.x - camera_x)
+        draw_y = int(self.y - camera_y)
+
+        if self.collectible_type.image:
+            screen.blit(self.collectible_type.image, (draw_x, draw_y))
+        else:
+            # Draw as a circle
+            center_x = draw_x + self.width // 2
+            center_y = draw_y + self.height // 2
+            pygame.draw.circle(screen, self.collectible_type.color, (center_x, center_y), TILE_SIZE // 2)
 
 class Level:
     def __init__(self, filename: str):
@@ -228,16 +401,22 @@ class Level:
             'main': {},
             'foreground': {}
         }
+        self.enemy_types: Dict[int, EnemyType] = {}
+        self.enemies: List[Enemy] = []
+        self.collectible_types: Dict[int, CollectibleType] = {}
+        self.collectibles: List[Collectible] = []
+        self.score = 0
+        self.keys_collected = 0
         self.load_level(filename)
     
     def load_level(self, filename: str):
         """Load level from JSON file"""
         with open(filename, 'r') as f:
             data = json.load(f)
-        
+
         self.width = data['width']
         self.height = data['height']
-        
+
         # Load tile types
         for tid_str, ttype_data in data['tile_types'].items():
             tid = int(tid_str)
@@ -248,7 +427,7 @@ class Level:
                     image = pygame.transform.scale(image, (TILE_SIZE, TILE_SIZE))
                 except:
                     pass
-            
+
             self.tile_types[tid] = TileType(
                 id=tid,
                 name=ttype_data['name'],
@@ -257,7 +436,7 @@ class Level:
                 properties=ttype_data['properties'],
                 color=tuple(ttype_data['color'])
             )
-        
+
         # Load tiles
         for layer, tiles_data in data['layers'].items():
             for pos_str, tile_data in tiles_data.items():
@@ -266,6 +445,77 @@ class Level:
                     tile_type_id=tile_data['tile_type_id'],
                     layer=tile_data['layer']
                 )
+
+        # Load enemy types
+        if 'enemy_types' in data:
+            for eid_str, etype_data in data['enemy_types'].items():
+                eid = int(eid_str)
+                image = None
+                if etype_data['image_path'] and os.path.exists(etype_data['image_path']):
+                    try:
+                        image = pygame.image.load(etype_data['image_path'])
+                        image = pygame.transform.scale(image, (TILE_SIZE, TILE_SIZE))
+                    except:
+                        pass
+
+                self.enemy_types[eid] = EnemyType(
+                    id=eid,
+                    name=etype_data['name'],
+                    image_path=etype_data['image_path'],
+                    image=image,
+                    ai_type=etype_data['ai_type'],
+                    health=etype_data['health'],
+                    damage=etype_data['damage'],
+                    speed=etype_data['speed'],
+                    color=tuple(etype_data['color'])
+                )
+
+        # Load enemies
+        if 'enemies' in data:
+            for enemy_data in data['enemies']:
+                enemy_type = self.enemy_types.get(enemy_data['enemy_type_id'])
+                if enemy_type:
+                    enemy = Enemy(
+                        x=enemy_data['x'],
+                        y=enemy_data['y'],
+                        enemy_type=enemy_type,
+                        patrol_range=enemy_data.get('patrol_range', 100)
+                    )
+                    self.enemies.append(enemy)
+
+        # Load collectible types
+        if 'collectible_types' in data:
+            for cid_str, ctype_data in data['collectible_types'].items():
+                cid = int(cid_str)
+                image = None
+                if ctype_data['image_path'] and os.path.exists(ctype_data['image_path']):
+                    try:
+                        image = pygame.image.load(ctype_data['image_path'])
+                        image = pygame.transform.scale(image, (TILE_SIZE, TILE_SIZE))
+                    except:
+                        pass
+
+                self.collectible_types[cid] = CollectibleType(
+                    id=cid,
+                    name=ctype_data['name'],
+                    image_path=ctype_data['image_path'],
+                    image=image,
+                    effect=ctype_data['effect'],
+                    value=ctype_data['value'],
+                    color=tuple(ctype_data['color'])
+                )
+
+        # Load collectibles
+        if 'collectibles' in data:
+            for collectible_data in data['collectibles']:
+                collectible_type = self.collectible_types.get(collectible_data['collectible_type_id'])
+                if collectible_type:
+                    collectible = Collectible(
+                        x=collectible_data['x'],
+                        y=collectible_data['y'],
+                        collectible_type=collectible_type
+                    )
+                    self.collectibles.append(collectible)
     
     def get_solid_tiles(self):
         """Get all tiles with solid property"""
@@ -309,11 +559,12 @@ class Level:
     
     def draw(self, screen, camera_x, camera_y):
         """Draw the level"""
+        # Draw tiles
         for layer in ['background', 'main', 'foreground']:
             for (tile_x, tile_y), tile in self.tiles[layer].items():
                 screen_x = tile_x * TILE_SIZE - camera_x
                 screen_y = tile_y * TILE_SIZE - camera_y
-                
+
                 # Only draw if visible
                 if -TILE_SIZE < screen_x < SCREEN_WIDTH and -TILE_SIZE < screen_y < SCREEN_HEIGHT:
                     tile_type = self.tile_types.get(tile.tile_type_id)
@@ -323,6 +574,14 @@ class Level:
                         else:
                             pygame.draw.rect(screen, tile_type.color,
                                            (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+
+        # Draw collectibles
+        for collectible in self.collectibles:
+            collectible.draw(screen, camera_x, camera_y)
+
+        # Draw enemies
+        for enemy in self.enemies:
+            enemy.draw(screen, camera_x, camera_y)
 
 class Game:
     def __init__(self):
@@ -373,13 +632,59 @@ class Game:
         # Center camera on player
         target_x = self.player.x + self.player.width // 2 - SCREEN_WIDTH // 2
         target_y = self.player.y + self.player.height // 2 - SCREEN_HEIGHT // 2
-        
+
         # Clamp camera to level bounds
         max_camera_x = max(0, self.level.width * TILE_SIZE - SCREEN_WIDTH)
         max_camera_y = max(0, self.level.height * TILE_SIZE - SCREEN_HEIGHT)
-        
+
         self.camera_x = max(0, min(target_x, max_camera_x))
         self.camera_y = max(0, min(target_y, max_camera_y))
+
+    def check_enemy_collisions(self):
+        """Check for player-enemy collisions"""
+        player_rect = self.player.get_rect()
+
+        for enemy in self.level.enemies:
+            if not enemy.alive:
+                continue
+
+            enemy_rect = enemy.get_rect()
+            if player_rect.colliderect(enemy_rect):
+                # Player takes damage
+                self.player.health -= enemy.enemy_type.damage
+                if self.player.health < 0:
+                    self.player.health = 0
+
+                # Knockback player
+                dx = self.player.x - enemy.x
+                if dx > 0:
+                    self.player.x += 10  # Push right
+                else:
+                    self.player.x -= 10  # Push left
+
+    def check_collectible_collisions(self):
+        """Check for player-collectible collisions"""
+        player_rect = self.player.get_rect()
+
+        for collectible in self.level.collectibles:
+            if collectible.collected:
+                continue
+
+            collectible_rect = collectible.get_rect()
+            if player_rect.colliderect(collectible_rect):
+                collectible.collected = True
+
+                # Apply collectible effect
+                if collectible.collectible_type.effect == CollectibleEffect.HEALTH.value:
+                    self.player.health = min(self.player.max_health,
+                                            self.player.health + collectible.collectible_type.value)
+                elif collectible.collectible_type.effect == CollectibleEffect.SCORE.value:
+                    self.level.score += collectible.collectible_type.value
+                elif collectible.collectible_type.effect == CollectibleEffect.KEY.value:
+                    self.level.keys_collected += collectible.collectible_type.value
+                elif collectible.collectible_type.effect == CollectibleEffect.POWERUP.value:
+                    # Could implement powerups later
+                    pass
     
     def draw_ui(self):
         """Draw UI elements"""
@@ -406,6 +711,14 @@ class Game:
         # Level info
         level_text = self.font.render(f"Level {self.current_level_index + 1}/{len(self.levels)}", True, WHITE)
         self.screen.blit(level_text, (SCREEN_WIDTH - 150, 10))
+
+        # Score
+        score_text = self.font.render(f"Score: {self.level.score}", True, WHITE)
+        self.screen.blit(score_text, (SCREEN_WIDTH - 150, 40))
+
+        # Keys
+        keys_text = self.font.render(f"Keys: {self.level.keys_collected}", True, WHITE)
+        self.screen.blit(keys_text, (SCREEN_WIDTH - 150, 70))
         
         # Controls hint
         controls = [
@@ -453,23 +766,32 @@ class Game:
         """Main game loop"""
         while self.running:
             self.handle_events()
-            
+
             # Get input
             keys = pygame.key.get_pressed()
-            
+
             # Update
             self.player.update(keys, self.level)
+
+            # Update enemies
+            for enemy in self.level.enemies:
+                enemy.update(self.player, self.level)
+
+            # Check collisions
+            self.check_enemy_collisions()
+            self.check_collectible_collisions()
+
             self.update_camera()
-            
+
             # Draw
             self.screen.fill(BLACK)
             self.level.draw(self.screen, self.camera_x, self.camera_y)
             self.player.draw(self.screen, self.camera_x, self.camera_y)
             self.draw_ui()
-            
+
             pygame.display.flip()
             self.clock.tick(FPS)
-        
+
         pygame.quit()
 
 if __name__ == "__main__":
