@@ -939,30 +939,43 @@ class TileEditor:
             self.input_active = False
             return
         
-        # Name field (after image preview)
-        y = editor_y + 45 + 20 + 64 + 11  # title + label + image + gap
+        # Match the draw function exactly
+        y = editor_y + 45
+
+        # Image preview label
+        y += 20
+        # Image preview (64px)
+        y += 75  # Skip image + gap
+
+        # Name field - match draw function exactly
+        name_label_y = y
+        y += 20
         name_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
         if name_field.collidepoint(pos):
             self.input_active = True
             self.input_field = 'name'
             self.input_text = tile_type.name
             return
-        
-        # Color field
-        y += 35 + 20  # name field + gap + label
+        y += 35
+
+        # Color field - match draw function exactly
+        color_label_y = y
+        y += 20
         color_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
         if color_field.collidepoint(pos):
             self.input_active = True
             self.input_field = 'color'
             self.input_text = f"{tile_type.color[0]},{tile_type.color[1]},{tile_type.color[2]}"
             return
-        
-        # Property checkboxes
-        y += 35 + 25  # color field + gap + properties label
-        for prop, checked in self.property_checkboxes.items():
+        y += 35
+
+        # Property checkboxes - match draw function exactly
+        props_label_y = y
+        y += 25
+        for prop in TileProperty:
             checkbox_rect = pygame.Rect(editor_x + 10, y, 15, 15)
             if checkbox_rect.collidepoint(pos):
-                self.property_checkboxes[prop] = not checked
+                self.property_checkboxes[prop.value] = not self.property_checkboxes.get(prop.value, False)
                 return
             y += 25
     
