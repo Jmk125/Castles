@@ -93,6 +93,17 @@ class CollectibleType:
     color: Tuple[int, int, int]
     required: bool = False
 
+@dataclass
+class BackgroundImage:
+    layer_index: int  # 0-3 (0 = far background, 3 = closest)
+    image_path: str
+    image: Optional[pygame.Surface]
+    x: int
+    y: int
+    width: int
+    height: int
+    parallax_factor: float
+
 class Player:
     def __init__(self, x: float, y: float):
         self.x = x
@@ -483,12 +494,14 @@ class Level:
         self.required_collectibles_collected = 0
         self.required_enemies_total = 0
         self.required_enemies_killed = 0
-        # Background image
+        # Background image (legacy - for backwards compatibility)
         self.background_image: Optional[pygame.Surface] = None
         self.background_x = 0
         self.background_y = 0
         self.background_width = 0
         self.background_height = 0
+        # Background layers (new parallax system)
+        self.background_layers: List[BackgroundImage] = []
         self.load_level(filename)
     
     def load_level(self, filename: str):
@@ -607,7 +620,7 @@ class Level:
                     if collectible_type.required:
                         self.required_collectibles_total += 1
 
-        # Load background image
+        # Load background image (legacy - for backwards compatibility)
         if 'background' in data and data['background']:
             bg_data = data['background']
             image_path = bg_data.get('image_path')
@@ -622,6 +635,29 @@ class Level:
                 except Exception as e:
                     print(f"Error loading background image: {e}")
                     self.background_image = None
+
+        # Load background layers (new parallax system)
+        if 'background_layers' in data:
+            for bg_data in data['background_layers']:
+                try:
+                    image_path = bg_data['image_path']
+                    image = None
+                    if image_path and os.path.exists(image_path):
+                        image = pygame.image.load(image_path)
+
+                    bg_img = BackgroundImage(
+                        layer_index=bg_data['layer_index'],
+                        image_path=image_path,
+                        image=image,
+                        x=bg_data['x'],
+                        y=bg_data['y'],
+                        width=bg_data['width'],
+                        height=bg_data['height'],
+                        parallax_factor=bg_data['parallax_factor']
+                    )
+                    self.background_layers.append(bg_img)
+                except Exception as e:
+                    print(f"Error loading background layer: {e}")
 
     def get_solid_tiles(self):
         """Get all tiles with solid property"""
@@ -685,7 +721,19 @@ class Level:
     
     def draw(self, screen, camera_x, camera_y):
         """Draw the level"""
-        # Draw background image if loaded
+        # Draw new parallax background layers (sorted from far to near: 0, 1, 2, 3)
+        sorted_backgrounds = sorted(self.background_layers, key=lambda bg: bg.layer_index)
+        for bg_img in sorted_backgrounds:
+            if bg_img.image:
+                # Apply parallax effect: further layers scroll slower
+                parallax_x = bg_img.x - (camera_x * bg_img.parallax_factor)
+                parallax_y = bg_img.y - (camera_y * bg_img.parallax_factor)
+
+                # Scale and draw the background
+                scaled_bg = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
+                screen.blit(scaled_bg, (parallax_x, parallax_y))
+
+        # Draw legacy background image if loaded (for backwards compatibility)
         if self.background_image and self.background_width > 0 and self.background_height > 0:
             screen_x = self.background_x - camera_x
             screen_y = self.background_y - camera_y
