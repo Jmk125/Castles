@@ -1,6 +1,7 @@
 import pygame
 import json
 import os
+import argparse
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
@@ -16,8 +17,11 @@ TILE_SIZE = 16
 FPS = 60
 GRAVITY = 0.5
 MAX_FALL_SPEED = 10
-# Higher values push the player lower on the screen.
-CAMERA_PLAYER_VERTICAL_FRACTION = 0.9
+# Fraction of the viewport height where the player's feet sit within the view.
+CAMERA_VERTICAL_TRIGGER_FRACTION = 0.8
+# Fractional deadzone above/below the trigger where the camera does not move.
+CAMERA_VERTICAL_DEADZONE_UP_FRACTION = 0.08
+CAMERA_VERTICAL_DEADZONE_DOWN_FRACTION = 0.08
 
 # Colors
 WHITE = (255, 255, 255)
@@ -35,6 +39,7 @@ class TileProperty(Enum):
     BACKGROUND = "background"
     LADDER = "ladder"
     END_LEVEL = "end_level"
+    PLAYER_START = "player_start"
 
 # Enemy AI Types
 class EnemyAI(Enum):
@@ -720,6 +725,15 @@ class Level:
                     end_level_tiles.append(((tile_x, tile_y), tile))
         return end_level_tiles
 
+    def get_player_start(self) -> Optional[Tuple[int, int]]:
+        """Find the first player start tile position in tile coordinates."""
+        for layer in ['main', 'foreground', 'background']:
+            for (tile_x, tile_y), tile in self.tiles[layer].items():
+                tile_type = self.tile_types.get(tile.tile_type_id)
+                if tile_type and TileProperty.PLAYER_START.value in tile_type.properties:
+                    return tile_x, tile_y
+        return None
+
     def all_required_collectibles_collected(self):
         """Check if all required collectibles have been collected"""
         return self.required_collectibles_collected >= self.required_collectibles_total
@@ -801,6 +815,8 @@ class Level:
                 if -TILE_SIZE < screen_x < SCREEN_WIDTH and -TILE_SIZE < screen_y < SCREEN_HEIGHT:
                     tile_type = self.tile_types.get(tile.tile_type_id)
                     if tile_type:
+                        if TileProperty.PLAYER_START.value in tile_type.properties:
+                            continue
                         # Only show END_LEVEL tiles when all requirements are met
                         if TileProperty.END_LEVEL.value in tile_type.properties:
                             if not self.all_requirements_met():
@@ -1051,6 +1067,7 @@ class Game:
         pygame.display.set_caption("Castles")
         self.clock = pygame.time.Clock()
         self.running = True
+        self.test_mode = False
 
         # Font for UI (initialize before screens)
         self.font = pygame.font.Font(None, 24)
@@ -1080,12 +1097,38 @@ class Game:
 
         # Total score across all levels in current run
         self.total_score = 0
+
+    def spawn_player(self):
+        """Spawn player at the player start tile if present."""
+        start_tile = self.level.get_player_start() if self.level else None
+        if start_tile:
+            tile_x, tile_y = start_tile
+            spawn_x = tile_x * TILE_SIZE + (TILE_SIZE - 14) / 2
+            spawn_y = tile_y * TILE_SIZE + TILE_SIZE - 28
+        else:
+            spawn_x = 100
+            spawn_y = 100
+        self.player = Player(spawn_x, spawn_y)
+
+    def set_camera_to_player(self):
+        """Position camera based on player spawn and viewport trigger."""
+        viewport_width = self.level.viewport_width
+        viewport_height = self.level.viewport_height
+        trigger_y = viewport_height * CAMERA_VERTICAL_TRIGGER_FRACTION
+        player_feet_y = self.player.y + self.player.height
+        target_x = self.player.x + self.player.width // 2 - viewport_width // 2
+        target_y = player_feet_y - trigger_y
+        max_camera_x = max(0, self.level.width * TILE_SIZE - viewport_width)
+        max_camera_y = max(0, self.level.height * TILE_SIZE - viewport_height)
+        self.camera_x = max(0, min(target_x, max_camera_x))
+        self.camera_y = max(0, min(target_y, max_camera_y))
     
     def start_run(self):
         """Start a new game run"""
         # Load all levels
         self.levels = self.load_all_levels()
         self.current_level_index = 0
+        self.test_mode = False
 
         if not self.levels:
             print("No level files found! Please create a level first.")
@@ -1094,14 +1137,24 @@ class Game:
 
         # Initialize game
         self.level = self.levels[self.current_level_index]
-        self.player = Player(100, 100)
-        # Use viewport settings from level to set initial camera position
-        self.camera_x = self.level.viewport_x
-        self.camera_y = self.level.viewport_y
+        self.spawn_player()
+        self.set_camera_to_player()
         self.game_over = False
         self.total_score = 0
 
         # Switch to playing state
+        self.state = GameState.PLAYING
+
+    def start_test_level(self, level_path: str):
+        """Start a test run for a single level and exit on escape."""
+        self.levels = [Level(level_path)]
+        self.current_level_index = 0
+        self.level = self.levels[self.current_level_index]
+        self.spawn_player()
+        self.set_camera_to_player()
+        self.game_over = False
+        self.total_score = 0
+        self.test_mode = True
         self.state = GameState.PLAYING
 
     def load_all_levels(self):
@@ -1127,9 +1180,17 @@ class Game:
 
         # Center camera on player horizontally, keep player's feet near bottom vertically
         target_x = self.player.x + self.player.width // 2 - viewport_width // 2
-        target_y = self.player.y + self.player.height - int(
-            viewport_height * CAMERA_PLAYER_VERTICAL_FRACTION
-        )
+        target_y = self.camera_y
+        player_feet_y = self.player.y + self.player.height
+        player_feet_screen_y = player_feet_y - self.camera_y
+        min_fraction = max(0.0, CAMERA_VERTICAL_TRIGGER_FRACTION - CAMERA_VERTICAL_DEADZONE_UP_FRACTION)
+        max_fraction = min(1.0, CAMERA_VERTICAL_TRIGGER_FRACTION + CAMERA_VERTICAL_DEADZONE_DOWN_FRACTION)
+        min_screen_y = viewport_height * min_fraction
+        max_screen_y = viewport_height * max_fraction
+        if player_feet_screen_y < min_screen_y:
+            target_y = player_feet_y - min_screen_y
+        elif player_feet_screen_y > max_screen_y:
+            target_y = player_feet_y - max_screen_y
 
         # Clamp camera to level bounds
         max_camera_x = max(0, self.level.width * TILE_SIZE - viewport_width)
@@ -1377,7 +1438,8 @@ class Game:
         if self.current_level_index < len(self.levels) - 1:
             self.current_level_index += 1
             self.level = self.levels[self.current_level_index]
-            self.player = Player(100, 100)
+            self.spawn_player()
+            self.set_camera_to_player()
             print(f"Level {self.current_level_index + 1} loaded")
         else:
             print("No more levels!")
@@ -1386,7 +1448,8 @@ class Game:
         """Restart current level"""
         # Reload the current level
         self.level = Level(self.level.filename)
-        self.player = Player(100, 100)
+        self.spawn_player()
+        self.set_camera_to_player()
         self.game_over = False
         print("Level restarted")
     
@@ -1414,8 +1477,11 @@ class Game:
             elif self.state == GameState.PLAYING:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        # Return to title screen
-                        self.state = GameState.TITLE
+                        if self.test_mode:
+                            self.running = False
+                        else:
+                            # Return to title screen
+                            self.state = GameState.TITLE
                     elif event.key == pygame.K_SPACE:
                         # Attack with spacebar
                         if not self.game_over:
@@ -1495,5 +1561,11 @@ class Game:
         pygame.quit()
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Castles game")
+    parser.add_argument("--test-level", dest="test_level", help="Run a single level in test mode.")
+    args = parser.parse_args()
+
     game = Game()
+    if args.test_level:
+        game.start_test_level(args.test_level)
     game.run()
