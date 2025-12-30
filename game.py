@@ -841,15 +841,23 @@ class Game:
             print("Level complete! No more levels, restarting current level...")
             self.level = Level(self.level.filename)
 
-        # Reset player
+        # Reset player position only (keep health for roguelike continuity)
         self.player.x = 100
         self.player.y = 100
-        self.player.health = self.player.max_health
 
     def check_player_death(self):
         """Check if player is dead"""
+        # Death from health loss
         if self.player.health <= 0:
             self.game_over = True
+            return
+
+        # Death from falling off the bottom of the level
+        level_bottom = self.level.height * TILE_SIZE
+        if self.player.y > level_bottom:
+            print("Player fell off the level!")
+            self.game_over = True
+            self.player.health = 0  # Set health to 0 for consistency
 
     def draw_game_over(self):
         """Draw game over screen"""
