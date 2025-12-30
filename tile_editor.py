@@ -780,7 +780,7 @@ class TileEditor:
                 bg_img = self.background_layers[self.selected_bg_image_index]
                 screen_x = bg_img.x - self.camera_x
                 screen_y = bg_img.y - self.camera_y
-                handle_size = 12
+                handle_size = 16
                 handle_rect = pygame.Rect(screen_x, screen_y, handle_size, handle_size)
 
                 if handle_rect.collidepoint(pos):
@@ -788,7 +788,21 @@ class TileEditor:
                     self.bg_resize_start_pos = pos
                     return
 
-            # Check if clicking on any background image
+                # Check if clicking on border (not inside) for dragging
+                border_thickness = 4
+                img_rect = pygame.Rect(screen_x, screen_y, bg_img.width, bg_img.height)
+                inner_rect = pygame.Rect(screen_x + border_thickness,
+                                        screen_y + border_thickness,
+                                        bg_img.width - border_thickness * 2,
+                                        bg_img.height - border_thickness * 2)
+
+                # If click is on image border (not inside), start dragging
+                if img_rect.collidepoint(pos) and not inner_rect.collidepoint(pos):
+                    self.dragging_bg_image = True
+                    self.bg_drag_start_pos = pos
+                    return
+
+            # Check if clicking on any background image to select it
             for bg_img in reversed(self.background_layers):
                 screen_x = bg_img.x - self.camera_x
                 screen_y = bg_img.y - self.camera_y
@@ -796,8 +810,6 @@ class TileEditor:
 
                 if img_rect.collidepoint(pos):
                     self.selected_bg_image_index = self.background_layers.index(bg_img)
-                    self.dragging_bg_image = True
-                    self.bg_drag_start_pos = pos
                     return
 
         # Check if clicking in palette
@@ -1203,11 +1215,16 @@ class TileEditor:
                     return
                 layer_y += 35
 
-            layer_y += 10  # Skip the "Images in Layer X:" text
-            layer_y += 20
+            layer_y += 10  # Gap after layer buttons
+            layer_y += 20  # "Images in Layer X:" text
 
             # Handle clicks on background images
             layer_images = [img for img in self.background_layers if img.layer_index == self.current_bg_layer]
+
+            # Add space for hint text (matches drawing code)
+            if layer_images:
+                layer_y += 18  # "Click to select & edit in canvas" hint
+
             for idx, bg_img in enumerate(layer_images):
                 bg_img_idx = self.background_layers.index(bg_img)
                 item_rect = pygame.Rect(self.palette_rect.x + 10, layer_y, self.palette_width - 20, 60)
@@ -1528,13 +1545,14 @@ class TileEditor:
                 if self.current_tab == EditorTab.BACKGROUND:
                     bg_img_idx = self.background_layers.index(bg_img)
                     if bg_img_idx == self.selected_bg_image_index:
-                        # Draw selection border
-                        pygame.draw.rect(self.screen, GREEN, (screen_x, screen_y, bg_img.width, bg_img.height), 3)
+                        # Draw selection border (thicker for easier clicking)
+                        border_thickness = 4
+                        pygame.draw.rect(self.screen, GREEN, (screen_x, screen_y, bg_img.width, bg_img.height), border_thickness)
 
-                        # Draw resize handle (top-left corner)
-                        handle_size = 12
-                        pygame.draw.rect(self.screen, YELLOW, (screen_x, screen_y, handle_size, handle_size))
-                        pygame.draw.rect(self.screen, BLACK, (screen_x, screen_y, handle_size, handle_size), 1)
+                        # Draw resize handle (top-left corner, green to match border)
+                        handle_size = 16
+                        pygame.draw.rect(self.screen, GREEN, (screen_x, screen_y, handle_size, handle_size))
+                        pygame.draw.rect(self.screen, BLACK, (screen_x, screen_y, handle_size, handle_size), 2)
 
         # Draw grid
         start_x = -(self.camera_x % TILE_SIZE)
