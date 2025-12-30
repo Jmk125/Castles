@@ -19,6 +19,7 @@ DEFAULT_LEVEL_WIDTH = 200  # tiles
 DEFAULT_LEVEL_HEIGHT = 50  # tiles
 VIEWPORT_WIDTH = 1280
 VIEWPORT_HEIGHT = 720
+TOP_BAR_HEIGHT = 32  # Height of the top button bar
 FPS = 60
 
 # Colors
@@ -229,8 +230,8 @@ class TileEditor:
         
         # UI Layout
         self.palette_width = 300
-        self.canvas_rect = pygame.Rect(0, 0, SCREEN_WIDTH - self.palette_width, SCREEN_HEIGHT)
-        self.palette_rect = pygame.Rect(SCREEN_WIDTH - self.palette_width, 0, self.palette_width, SCREEN_HEIGHT)
+        self.canvas_rect = pygame.Rect(0, TOP_BAR_HEIGHT, SCREEN_WIDTH - self.palette_width, SCREEN_HEIGHT - TOP_BAR_HEIGHT)
+        self.palette_rect = pygame.Rect(SCREEN_WIDTH - self.palette_width, TOP_BAR_HEIGHT, self.palette_width, SCREEN_HEIGHT - TOP_BAR_HEIGHT)
         
         # Tile types (with placeholder tiles)
         self.tile_types: Dict[int, TileType] = {}
@@ -1473,10 +1474,13 @@ class TileEditor:
         # Draw background
         self.screen.fill(DARK_GRAY, self.canvas_rect)
 
+        # Canvas offset for all drawing operations
+        canvas_offset_y = self.canvas_rect.y
+
         # Draw background image if loaded (legacy, for TILES tab)
         if self.background_image and self.background_width > 0 and self.background_height > 0:
             screen_x = self.background_x - self.camera_x
-            screen_y = self.background_y - self.camera_y
+            screen_y = self.background_y - self.camera_y + canvas_offset_y
             scaled_bg = pygame.transform.scale(self.background_image, (self.background_width, self.background_height))
             self.screen.blit(scaled_bg, (screen_x, screen_y))
 
@@ -1490,7 +1494,7 @@ class TileEditor:
             layer_images = [img for img in self.background_layers if img.layer_index == layer_idx]
             for bg_img in layer_images:
                 screen_x = bg_img.x - self.camera_x
-                screen_y = bg_img.y - self.camera_y
+                screen_y = bg_img.y - self.camera_y + canvas_offset_y
 
                 if bg_img.repeat_x or bg_img.repeat_y:
                     # Calculate how many times to repeat
@@ -1503,8 +1507,8 @@ class TileEditor:
                         tile_x = start_x
                         while tile_x < self.canvas_rect.width:
                             tile_y = start_y
-                            while tile_y < self.canvas_rect.height:
-                                if tile_x + bg_img.width > 0 and tile_y + bg_img.height > 0:
+                            while tile_y < self.canvas_rect.bottom:
+                                if tile_x + bg_img.width > 0 and tile_y + bg_img.height > canvas_offset_y:
                                     scaled_img = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
                                     self.screen.blit(scaled_img, (tile_x, tile_y))
                                 tile_y += bg_img.height
@@ -1513,21 +1517,21 @@ class TileEditor:
                         # Repeat horizontally only
                         tile_x = start_x
                         while tile_x < self.canvas_rect.width:
-                            if tile_x + bg_img.width > 0 and screen_y + bg_img.height > 0 and screen_y < self.canvas_rect.height:
+                            if tile_x + bg_img.width > 0 and screen_y + bg_img.height > canvas_offset_y and screen_y < self.canvas_rect.bottom:
                                 scaled_img = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
                                 self.screen.blit(scaled_img, (tile_x, screen_y))
                             tile_x += bg_img.width
                     elif bg_img.repeat_y:
                         # Repeat vertically only
                         tile_y = start_y
-                        while tile_y < self.canvas_rect.height:
-                            if screen_x + bg_img.width > 0 and screen_x < self.canvas_rect.width and tile_y + bg_img.height > 0:
+                        while tile_y < self.canvas_rect.bottom:
+                            if screen_x + bg_img.width > 0 and screen_x < self.canvas_rect.width and tile_y + bg_img.height > canvas_offset_y:
                                 scaled_img = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
                                 self.screen.blit(scaled_img, (screen_x, tile_y))
                             tile_y += bg_img.height
                 else:
                     # No repeat, just draw once
-                    if screen_x + bg_img.width > 0 and screen_y + bg_img.height > 0 and screen_x < self.canvas_rect.width and screen_y < self.canvas_rect.height:
+                    if screen_x + bg_img.width > 0 and screen_y + bg_img.height > canvas_offset_y and screen_x < self.canvas_rect.width and screen_y < self.canvas_rect.bottom:
                         scaled_img = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
                         self.screen.blit(scaled_img, (screen_x, screen_y))
 
@@ -1555,31 +1559,31 @@ class TileEditor:
         # Draw grid
         start_x = -(self.camera_x % TILE_SIZE)
         start_y = -(self.camera_y % TILE_SIZE)
-        
+
         for x in range(start_x, self.canvas_rect.width, TILE_SIZE):
-            pygame.draw.line(self.screen, (80, 80, 80), (x, 0), (x, self.canvas_rect.height))
+            pygame.draw.line(self.screen, (80, 80, 80), (x, self.canvas_rect.y), (x, self.canvas_rect.bottom))
         for y in range(start_y, self.canvas_rect.height, TILE_SIZE):
-            pygame.draw.line(self.screen, (80, 80, 80), (0, y), (self.canvas_rect.width, y))
+            pygame.draw.line(self.screen, (80, 80, 80), (0, y + self.canvas_rect.y), (self.canvas_rect.width, y + self.canvas_rect.y))
         
         # Draw tiles
         for layer in ['background', 'main', 'foreground']:
             if not self.layer_visibility[layer]:
                 continue
-            
+
             for (tile_x, tile_y), tile in self.tiles[layer].items():
                 screen_x = tile_x * TILE_SIZE - self.camera_x
-                screen_y = tile_y * TILE_SIZE - self.camera_y
-                
+                screen_y = tile_y * TILE_SIZE - self.camera_y + canvas_offset_y
+
                 # Only draw if visible
-                if -TILE_SIZE < screen_x < self.canvas_rect.width and -TILE_SIZE < screen_y < self.canvas_rect.height:
+                if -TILE_SIZE < screen_x < self.canvas_rect.width and canvas_offset_y - TILE_SIZE < screen_y < self.canvas_rect.bottom:
                     tile_type = self.tile_types.get(tile.tile_type_id)
                     if tile_type:
                         if tile_type.image:
                             self.screen.blit(tile_type.image, (screen_x, screen_y))
                         else:
-                            pygame.draw.rect(self.screen, tile_type.color, 
+                            pygame.draw.rect(self.screen, tile_type.color,
                                            (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                        
+
                         # Draw semi-transparent overlay for non-main layers
                         if layer == 'background':
                             overlay = pygame.Surface((TILE_SIZE, TILE_SIZE))
@@ -1591,15 +1595,15 @@ class TileEditor:
                             overlay.set_alpha(128)
                             overlay.fill((100, 0, 0))
                             self.screen.blit(overlay, (screen_x, screen_y))
-        
+
         # Draw preview tiles
         if self.preview_tiles and self.current_tile_type_id is not None:
             tile_type = self.tile_types.get(self.current_tile_type_id)
             if tile_type:
                 for tile_x, tile_y in self.preview_tiles:
                     screen_x = tile_x * TILE_SIZE - self.camera_x
-                    screen_y = tile_y * TILE_SIZE - self.camera_y
-                    
+                    screen_y = tile_y * TILE_SIZE - self.camera_y + canvas_offset_y
+
                     if tile_type.image:
                         img = tile_type.image.copy()
                         img.set_alpha(128)
@@ -1609,14 +1613,14 @@ class TileEditor:
                         surf.set_alpha(128)
                         surf.fill(tile_type.color)
                         self.screen.blit(surf, (screen_x, screen_y))
-        
+
         # Draw enemies
         for enemy in self.enemies:
             screen_x = enemy.x - self.camera_x
-            screen_y = enemy.y - self.camera_y
+            screen_y = enemy.y - self.camera_y + canvas_offset_y
 
             # Only draw if visible
-            if -TILE_SIZE < screen_x < self.canvas_rect.width and -TILE_SIZE < screen_y < self.canvas_rect.height:
+            if -TILE_SIZE < screen_x < self.canvas_rect.width and canvas_offset_y - TILE_SIZE < screen_y < self.canvas_rect.bottom:
                 enemy_type = self.enemy_types.get(enemy.enemy_type_id)
                 if enemy_type:
                     if enemy_type.image:
@@ -1630,10 +1634,10 @@ class TileEditor:
         # Draw collectibles
         for collectible in self.collectibles:
             screen_x = collectible.x - self.camera_x
-            screen_y = collectible.y - self.camera_y
+            screen_y = collectible.y - self.camera_y + canvas_offset_y
 
             # Only draw if visible
-            if -TILE_SIZE < screen_x < self.canvas_rect.width and -TILE_SIZE < screen_y < self.canvas_rect.height:
+            if -TILE_SIZE < screen_x < self.canvas_rect.width and canvas_offset_y - TILE_SIZE < screen_y < self.canvas_rect.bottom:
                 collectible_type = self.collectible_types.get(collectible.collectible_type_id)
                 if collectible_type:
                     if collectible_type.image:
@@ -1647,7 +1651,7 @@ class TileEditor:
 
         # Draw viewport indicator (game camera preview) - thicker border for easier clicking
         viewport_screen_x = self.viewport_x - self.camera_x
-        viewport_screen_y = self.viewport_y - self.camera_y
+        viewport_screen_y = self.viewport_y - self.camera_y + canvas_offset_y
         pygame.draw.rect(self.screen, YELLOW, (viewport_screen_x, viewport_screen_y, self.viewport_width, self.viewport_height), 4)
 
         # Draw resize handle for viewport (top-left corner)
@@ -1665,7 +1669,7 @@ class TileEditor:
         minimap_width = 200
         minimap_height = 150
         minimap_x = self.canvas_rect.width - minimap_width - 10
-        minimap_y = self.canvas_rect.height - minimap_height - 10
+        minimap_y = self.canvas_rect.bottom - minimap_height - 10
         
         # Background
         pygame.draw.rect(self.screen, BLACK, (minimap_x, minimap_y, minimap_width, minimap_height))
@@ -1707,11 +1711,11 @@ class TileEditor:
         """Draw the tile palette"""
         # Background
         self.screen.fill(LIGHT_GRAY, self.palette_rect)
-        pygame.draw.line(self.screen, BLACK, (self.palette_rect.x, 0),
-                        (self.palette_rect.x, SCREEN_HEIGHT), 2)
+        pygame.draw.line(self.screen, BLACK, (self.palette_rect.x, self.palette_rect.y),
+                        (self.palette_rect.x, self.palette_rect.bottom), 2)
 
         # Tab buttons (4 tabs in 2 rows)
-        y_offset = 10
+        y_offset = self.palette_rect.y + 10
         tab_width = (self.palette_width - 40) // 2
         tab_height = 25
         tab_x = self.palette_rect.x + 10
@@ -2982,10 +2986,10 @@ class TileEditor:
 
     def draw_top_bar(self):
         """Draw the top bar with New, Open, and Save As buttons"""
-        bar_height = 32
-        bar_rect = pygame.Rect(0, 0, SCREEN_WIDTH, bar_height)
+        # Draw bar background
+        bar_rect = pygame.Rect(0, 0, SCREEN_WIDTH, TOP_BAR_HEIGHT)
         pygame.draw.rect(self.screen, (60, 60, 60), bar_rect)
-        pygame.draw.line(self.screen, BLACK, (0, bar_height), (SCREEN_WIDTH, bar_height), 2)
+        pygame.draw.line(self.screen, BLACK, (0, TOP_BAR_HEIGHT - 1), (SCREEN_WIDTH, TOP_BAR_HEIGHT - 1), 2)
 
         # Button dimensions
         button_width = 90
@@ -2993,7 +2997,7 @@ class TileEditor:
         button_margin = 6
 
         # New button
-        self.new_button_rect = pygame.Rect(button_margin, (bar_height - button_height) // 2, button_width, button_height)
+        self.new_button_rect = pygame.Rect(button_margin, (TOP_BAR_HEIGHT - button_height) // 2, button_width, button_height)
         pygame.draw.rect(self.screen, YELLOW, self.new_button_rect)
         pygame.draw.rect(self.screen, BLACK, self.new_button_rect, 2)
         new_text = self.font.render("New", True, BLACK)
@@ -3001,7 +3005,7 @@ class TileEditor:
         self.screen.blit(new_text, text_rect)
 
         # Open button
-        self.open_button_rect = pygame.Rect(button_margin * 2 + button_width, (bar_height - button_height) // 2, button_width, button_height)
+        self.open_button_rect = pygame.Rect(button_margin * 2 + button_width, (TOP_BAR_HEIGHT - button_height) // 2, button_width, button_height)
         pygame.draw.rect(self.screen, GREEN, self.open_button_rect)
         pygame.draw.rect(self.screen, BLACK, self.open_button_rect, 2)
         open_text = self.font.render("Open", True, BLACK)
@@ -3010,17 +3014,13 @@ class TileEditor:
 
         # Save As button
         self.save_as_button_rect = pygame.Rect(button_margin * 3 + button_width * 2,
-                                                 (bar_height - button_height) // 2,
+                                                 (TOP_BAR_HEIGHT - button_height) // 2,
                                                  button_width, button_height)
         pygame.draw.rect(self.screen, BLUE, self.save_as_button_rect)
         pygame.draw.rect(self.screen, BLACK, self.save_as_button_rect, 2)
         save_text = self.font.render("Save As", True, BLACK)
         text_rect = save_text.get_rect(center=self.save_as_button_rect.center)
         self.screen.blit(save_text, text_rect)
-
-        # Adjust canvas and palette rects to account for top bar
-        self.canvas_rect = pygame.Rect(0, bar_height, SCREEN_WIDTH - self.palette_width, SCREEN_HEIGHT - bar_height)
-        self.palette_rect = pygame.Rect(SCREEN_WIDTH - self.palette_width, bar_height, self.palette_width, SCREEN_HEIGHT - bar_height)
 
     def run(self):
         """Main game loop"""
