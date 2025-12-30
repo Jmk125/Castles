@@ -474,6 +474,8 @@ class Level:
         self.keys_collected = 0
         self.required_collectibles_total = 0
         self.required_collectibles_collected = 0
+        self.required_enemies_total = 0
+        self.required_enemies_killed = 0
         # Background image
         self.background_image: Optional[pygame.Surface] = None
         self.background_x = 0
@@ -540,7 +542,8 @@ class Level:
                     health=etype_data['health'],
                     damage=etype_data['damage'],
                     speed=etype_data['speed'],
-                    color=tuple(etype_data['color'])
+                    color=tuple(etype_data['color']),
+                    required=etype_data.get('required', False)
                 )
 
         # Load enemies
@@ -555,6 +558,9 @@ class Level:
                         patrol_range=enemy_data.get('patrol_range', 100)
                     )
                     self.enemies.append(enemy)
+                    # Count required enemies
+                    if enemy_type.required:
+                        self.required_enemies_total += 1
 
         # Load collectible types
         if 'collectible_types' in data:
@@ -654,6 +660,12 @@ class Level:
         """Check if all required collectibles have been collected"""
         return self.required_collectibles_collected >= self.required_collectibles_total
 
+    def all_requirements_met(self):
+        """Check if all level completion requirements are met (collectibles AND enemies)"""
+        collectibles_done = self.required_collectibles_collected >= self.required_collectibles_total
+        enemies_done = self.required_enemies_killed >= self.required_enemies_total
+        return collectibles_done and enemies_done
+
     def get_ladder_tiles(self):
         """Get all tiles with ladder property"""
         ladder_tiles = []
@@ -683,9 +695,9 @@ class Level:
                 if -TILE_SIZE < screen_x < SCREEN_WIDTH and -TILE_SIZE < screen_y < SCREEN_HEIGHT:
                     tile_type = self.tile_types.get(tile.tile_type_id)
                     if tile_type:
-                        # Only show END_LEVEL tiles when all required collectibles are collected
+                        # Only show END_LEVEL tiles when all requirements are met
                         if TileProperty.END_LEVEL.value in tile_type.properties:
-                            if not self.all_required_collectibles_collected():
+                            if not self.all_requirements_met():
                                 continue  # Skip drawing END_LEVEL tile
 
                         if tile_type.image:
@@ -826,8 +838,17 @@ class Game:
 
             enemy_rect = enemy.get_rect()
             if attack_rect.colliderect(enemy_rect):
+                # Check if enemy was alive and required before dealing damage
+                was_alive = enemy.alive
+                was_required = enemy.enemy_type.required
+
                 # Apply damage to enemy
                 enemy.take_damage(self.player.attack_damage)
+
+                # Track required enemy kills
+                if was_alive and was_required and not enemy.alive:
+                    self.level.required_enemies_killed += 1
+                    print(f"Required enemy killed! ({self.level.required_enemies_killed}/{self.level.required_enemies_total})")
 
                 # Knockback enemy
                 if self.player.facing_right:
@@ -841,8 +862,8 @@ class Game:
 
     def check_end_level_collision(self):
         """Check if player touches END_LEVEL tile when requirements are met"""
-        # Only check if all required collectibles are collected
-        if not self.level.all_required_collectibles_collected():
+        # Only check if all requirements are met (collectibles AND enemies)
+        if not self.level.all_requirements_met():
             return False
 
         player_rect = self.player.get_rect()

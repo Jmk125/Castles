@@ -1517,8 +1517,11 @@ class TileEditor:
                     pygame.draw.rect(self.screen, enemy_type.color, preview_rect)
                 pygame.draw.rect(self.screen, BLACK, preview_rect, 1)
 
-                # Name
-                name_text = self.small_font.render(enemy_type.name[:15], True, BLACK)
+                # Name with required marker
+                name_display = enemy_type.name[:15]
+                if enemy_type.required:
+                    name_display += " [REQ]"
+                name_text = self.small_font.render(name_display, True, BLACK)
                 self.screen.blit(name_text, (item_rect.x + 45, item_rect.y + 5))
 
                 # Stats
@@ -1850,6 +1853,18 @@ class TileEditor:
             clear_text = self.small_font.render("Clear", True, BLACK)
             self.screen.blit(clear_text, (clear_button.x + 20, clear_button.y + 5))
 
+        y += 35
+
+        # Required checkbox
+        required_checkbox = pygame.Rect(editor_x + 10, y, 15, 15)
+        pygame.draw.rect(self.screen, WHITE, required_checkbox)
+        pygame.draw.rect(self.screen, BLACK, required_checkbox, 1)
+        if enemy_type.required:
+            pygame.draw.line(self.screen, BLACK, required_checkbox.topleft, required_checkbox.bottomright, 2)
+            pygame.draw.line(self.screen, BLACK, required_checkbox.topright, required_checkbox.bottomleft, 2)
+        required_text = self.small_font.render("Required to kill to complete level", True, BLACK)
+        self.screen.blit(required_text, (editor_x + 30, y))
+
     def draw_collectible_editor(self):
         """Draw the collectible editor dialog"""
         if self.editing_collectible_id is None:
@@ -2045,6 +2060,14 @@ class TileEditor:
                 print("Cleared behavior script")
                 return
 
+        y += 35
+
+        # Required checkbox
+        required_checkbox = pygame.Rect(editor_x + 10, y, 15, 15)
+        if required_checkbox.collidepoint(pos):
+            enemy_type.required = not enemy_type.required
+            return
+
     def handle_collectible_editor_click(self, pos):
         """Handle clicks in the collectible editor dialog"""
         if self.editing_collectible_id is None:
@@ -2219,7 +2242,8 @@ class TileEditor:
                     damage=etype_data['damage'],
                     speed=etype_data['speed'],
                     color=tuple(etype_data['color']),
-                    behavior_script=etype_data.get('behavior_script')
+                    behavior_script=etype_data.get('behavior_script'),
+                    required=etype_data.get('required', False)
                 )
                 self.next_enemy_type_id = max(self.next_enemy_type_id, eid + 1)
 
