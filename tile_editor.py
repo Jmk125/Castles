@@ -691,23 +691,33 @@ class TileEditor:
                     self.viewport_y = max(0, min(self.viewport_y, self.level_height * TILE_SIZE - self.viewport_height))
                     self.viewport_drag_start = event.pos
                 elif self.resizing_viewport and self.viewport_resize_start:
-                    # Resize viewport (maintain 16:9 aspect ratio)
+                    # Resize viewport from top-left (maintain 16:9 aspect ratio)
                     dx = event.pos[0] - self.viewport_resize_start[0]
                     dy = event.pos[1] - self.viewport_resize_start[1]
-                    # Use the larger of the two deltas to determine size
-                    delta = max(abs(dx), abs(dy)) * (1 if dx + dy > 0 else -1)
+                    # Use the larger of the two deltas to determine size change
+                    delta = max(abs(dx), abs(dy)) * (-1 if dx + dy > 0 else 1)
                     new_width = max(160, self.viewport_width + delta)
                     # Maintain 16:9 aspect ratio
                     new_height = int(new_width * 9 / 16)
+                    # Adjust position to keep bottom-right corner fixed
+                    width_change = new_width - self.viewport_width
+                    height_change = new_height - self.viewport_height
+                    self.viewport_x = max(0, self.viewport_x - width_change)
+                    self.viewport_y = max(0, self.viewport_y - height_change)
                     self.viewport_width = new_width
                     self.viewport_height = new_height
                     self.viewport_resize_start = event.pos
                 elif self.resizing_background and self.resize_start_pos:
-                    # Resize background image
+                    # Resize background image from top-left (legacy TILES tab)
                     dx = event.pos[0] - self.resize_start_pos[0]
                     dy = event.pos[1] - self.resize_start_pos[1]
-                    self.background_width = max(50, self.background_width + dx)
-                    self.background_height = max(50, self.background_height + dy)
+                    new_width = max(50, self.background_width - dx)
+                    new_height = max(50, self.background_height - dy)
+                    # Adjust position
+                    self.background_x += self.background_width - new_width
+                    self.background_y += self.background_height - new_height
+                    self.background_width = new_width
+                    self.background_height = new_height
                     self.resize_start_pos = event.pos
                 elif self.dragging_camera and self.drag_start_pos:
                     dx = self.drag_start_pos[0] - event.pos[0]
@@ -723,35 +733,40 @@ class TileEditor:
     
     def handle_left_click(self, pos):
         """Handle left mouse click"""
-        # Check if clicking on viewport resize handle (in canvas area)
+        # Check if clicking on viewport controls (in canvas area)
         if self.canvas_rect.collidepoint(pos):
             viewport_screen_x = self.viewport_x - self.camera_x
             viewport_screen_y = self.viewport_y - self.camera_y
-            handle_size = 8
-            handle_x = viewport_screen_x + self.viewport_width - handle_size
-            handle_y = viewport_screen_y + self.viewport_height - handle_size
-            handle_rect = pygame.Rect(handle_x, handle_y, handle_size, handle_size)
 
+            # Check resize handle (top-left corner)
+            handle_size = 12
+            handle_rect = pygame.Rect(viewport_screen_x, viewport_screen_y, handle_size, handle_size)
             if handle_rect.collidepoint(pos):
                 self.resizing_viewport = True
                 self.viewport_resize_start = pos
                 return
 
-            # Check if clicking on viewport rectangle (for dragging)
+            # Check if clicking on viewport border (not inside) for dragging
+            border_thickness = 4
             viewport_rect = pygame.Rect(viewport_screen_x, viewport_screen_y, self.viewport_width, self.viewport_height)
-            if viewport_rect.collidepoint(pos):
+            # Create inner rect (the area inside the border)
+            inner_rect = pygame.Rect(viewport_screen_x + border_thickness,
+                                    viewport_screen_y + border_thickness,
+                                    self.viewport_width - border_thickness * 2,
+                                    self.viewport_height - border_thickness * 2)
+
+            # If click is on viewport but NOT on inner area, it's on the border
+            if viewport_rect.collidepoint(pos) and not inner_rect.collidepoint(pos):
                 self.dragging_viewport = True
                 self.viewport_drag_start = pos
                 return
 
-        # Check if clicking on background resize handle
+        # Check if clicking on background resize handle (legacy background in TILES tab)
         if self.background_image and self.background_width > 0 and self.background_height > 0:
-            handle_size = 10
+            handle_size = 12
             screen_x = self.background_x - self.camera_x
             screen_y = self.background_y - self.camera_y
-            handle_x = screen_x + self.background_width - handle_size
-            handle_y = screen_y + self.background_height - handle_size
-            handle_rect = pygame.Rect(handle_x, handle_y, handle_size, handle_size)
+            handle_rect = pygame.Rect(screen_x, screen_y, handle_size, handle_size)
 
             if handle_rect.collidepoint(pos):
                 self.resizing_background = True
@@ -760,15 +775,13 @@ class TileEditor:
 
         # Check if clicking on background layer images (new system)
         if self.current_tab == EditorTab.BACKGROUND and self.canvas_rect.collidepoint(pos):
-            # Check resize handle first
+            # Check resize handle first (top-left corner)
             if self.selected_bg_image_index is not None:
                 bg_img = self.background_layers[self.selected_bg_image_index]
                 screen_x = bg_img.x - self.camera_x
                 screen_y = bg_img.y - self.camera_y
-                handle_size = 10
-                handle_x = screen_x + bg_img.width - handle_size
-                handle_y = screen_y + bg_img.height - handle_size
-                handle_rect = pygame.Rect(handle_x, handle_y, handle_size, handle_size)
+                handle_size = 12
+                handle_rect = pygame.Rect(screen_x, screen_y, handle_size, handle_size)
 
                 if handle_rect.collidepoint(pos):
                     self.resizing_bg_image = True
@@ -913,25 +926,35 @@ class TileEditor:
             self.bg_drag_start_pos = pos
             return
 
-        # Handle resizing background image
+        # Handle resizing background image (from top-left corner)
         if self.resizing_bg_image and self.selected_bg_image_index is not None:
             bg_img = self.background_layers[self.selected_bg_image_index]
             dx = pos[0] - self.bg_resize_start_pos[0]
             dy = pos[1] - self.bg_resize_start_pos[1]
 
             if bg_img.aspect_ratio_locked and bg_img.image:
-                # Maintain aspect ratio
+                # Maintain aspect ratio - resize from top-left
                 original_aspect = bg_img.image.get_width() / bg_img.image.get_height()
-                # Use the larger delta to determine size
-                delta = max(abs(dx), abs(dy)) * (1 if dx + dy > 0 else -1)
+                # Use the larger delta to determine size change
+                delta = max(abs(dx), abs(dy)) * (-1 if dx + dy > 0 else 1)
                 new_width = max(10, bg_img.width + delta)
                 new_height = int(new_width / original_aspect)
+                # Adjust position to keep bottom-right corner fixed
+                width_change = new_width - bg_img.width
+                height_change = new_height - bg_img.height
+                bg_img.x -= width_change
+                bg_img.y -= height_change
                 bg_img.width = new_width
                 bg_img.height = new_height
             else:
-                # Free resize
-                bg_img.width = max(10, bg_img.width + dx)
-                bg_img.height = max(10, bg_img.height + dy)
+                # Free resize from top-left
+                new_width = max(10, bg_img.width - dx)
+                new_height = max(10, bg_img.height - dy)
+                # Adjust position
+                bg_img.x += bg_img.width - new_width
+                bg_img.y += bg_img.height - new_height
+                bg_img.width = new_width
+                bg_img.height = new_height
 
             self.bg_resize_start_pos = pos
             return
@@ -1450,12 +1473,10 @@ class TileEditor:
             scaled_bg = pygame.transform.scale(self.background_image, (self.background_width, self.background_height))
             self.screen.blit(scaled_bg, (screen_x, screen_y))
 
-            # Draw resize handle (small square in bottom-right corner)
-            handle_size = 10
-            handle_x = screen_x + self.background_width - handle_size
-            handle_y = screen_y + self.background_height - handle_size
-            pygame.draw.rect(self.screen, YELLOW, (handle_x, handle_y, handle_size, handle_size))
-            pygame.draw.rect(self.screen, BLACK, (handle_x, handle_y, handle_size, handle_size), 1)
+            # Draw resize handle (top-left corner)
+            handle_size = 12
+            pygame.draw.rect(self.screen, YELLOW, (screen_x, screen_y, handle_size, handle_size))
+            pygame.draw.rect(self.screen, BLACK, (screen_x, screen_y, handle_size, handle_size), 1)
 
         # Draw background layers (new system, all 4 layers from far to near)
         for layer_idx in range(4):
@@ -1508,14 +1529,12 @@ class TileEditor:
                     bg_img_idx = self.background_layers.index(bg_img)
                     if bg_img_idx == self.selected_bg_image_index:
                         # Draw selection border
-                        pygame.draw.rect(self.screen, GREEN, (screen_x, screen_y, bg_img.width, bg_img.height), 2)
+                        pygame.draw.rect(self.screen, GREEN, (screen_x, screen_y, bg_img.width, bg_img.height), 3)
 
-                        # Draw resize handle (bottom-right corner)
-                        handle_size = 10
-                        handle_x = screen_x + bg_img.width - handle_size
-                        handle_y = screen_y + bg_img.height - handle_size
-                        pygame.draw.rect(self.screen, YELLOW, (handle_x, handle_y, handle_size, handle_size))
-                        pygame.draw.rect(self.screen, BLACK, (handle_x, handle_y, handle_size, handle_size), 1)
+                        # Draw resize handle (top-left corner)
+                        handle_size = 12
+                        pygame.draw.rect(self.screen, YELLOW, (screen_x, screen_y, handle_size, handle_size))
+                        pygame.draw.rect(self.screen, BLACK, (screen_x, screen_y, handle_size, handle_size), 1)
 
         # Draw grid
         start_x = -(self.camera_x % TILE_SIZE)
@@ -1610,16 +1629,17 @@ class TileEditor:
                     pygame.draw.circle(self.screen, YELLOW,
                                      (screen_x + TILE_SIZE // 2, screen_y + TILE_SIZE // 2), TILE_SIZE // 2, 2)
 
-        # Draw viewport indicator (game camera preview)
+        # Draw viewport indicator (game camera preview) - thicker border for easier clicking
         viewport_screen_x = self.viewport_x - self.camera_x
         viewport_screen_y = self.viewport_y - self.camera_y
-        pygame.draw.rect(self.screen, YELLOW, (viewport_screen_x, viewport_screen_y, self.viewport_width, self.viewport_height), 2)
+        pygame.draw.rect(self.screen, YELLOW, (viewport_screen_x, viewport_screen_y, self.viewport_width, self.viewport_height), 4)
 
-        # Draw resize handle for viewport
-        handle_size = 8
-        handle_x = viewport_screen_x + self.viewport_width - handle_size
-        handle_y = viewport_screen_y + self.viewport_height - handle_size
+        # Draw resize handle for viewport (top-left corner)
+        handle_size = 12
+        handle_x = viewport_screen_x
+        handle_y = viewport_screen_y
         pygame.draw.rect(self.screen, YELLOW, (handle_x, handle_y, handle_size, handle_size))
+        pygame.draw.rect(self.screen, BLACK, (handle_x, handle_y, handle_size, handle_size), 1)
 
         # Draw minimap
         self.draw_minimap()
