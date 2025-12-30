@@ -783,8 +783,9 @@ class TileEditor:
                 return
 
         # Check if clicking on background layer images (new system - SIMPLE!)
+        # Selection is done via palette - canvas only allows drag/resize of selected image
         if self.current_tab == EditorTab.BACKGROUND and self.canvas_rect.collidepoint(pos):
-            # If there's a selected image, check if clicking on it to drag
+            # Only allow dragging if there's a selected image
             if self.selected_bg_image_index is not None:
                 bg_img = self.background_layers[self.selected_bg_image_index]
                 screen_x = bg_img.x - self.camera_x
@@ -795,16 +796,6 @@ class TileEditor:
                 if img_rect.collidepoint(pos):
                     self.dragging_bg_image = True
                     self.bg_drag_start_pos = pos
-                    return
-
-            # Check if clicking on any background image to select it
-            for bg_img in reversed(self.background_layers):
-                screen_x = bg_img.x - self.camera_x
-                screen_y = bg_img.y - self.camera_y
-                img_rect = pygame.Rect(screen_x, screen_y, bg_img.width, bg_img.height)
-
-                if img_rect.collidepoint(pos):
-                    self.selected_bg_image_index = self.background_layers.index(bg_img)
                     return
 
         # Check if clicking in palette
@@ -1231,7 +1222,7 @@ class TileEditor:
 
             # Add space for hint text (matches drawing code)
             if layer_images:
-                layer_y += 18  # "Click to select & edit in canvas" hint
+                layer_y += 18  # "Click to select image" hint
 
             for idx, bg_img in enumerate(layer_images):
                 bg_img_idx = self.background_layers.index(bg_img)
@@ -2049,7 +2040,7 @@ class TileEditor:
 
             # Show helpful hint
             if layer_images:
-                hint = self.small_font.render("L-Click=Move | R-Click=Resize", True, DARK_GRAY)
+                hint = self.small_font.render("Click to select image", True, DARK_GRAY)
                 self.screen.blit(hint, (self.palette_rect.x + 10, layer_y))
                 layer_y += 18
 
@@ -2057,10 +2048,10 @@ class TileEditor:
                 hint_text = self.small_font.render("Drag & drop images here", True, DARK_GRAY)
                 self.screen.blit(hint_text, (self.palette_rect.x + 10, layer_y))
                 layer_y += 18
-                hint_text2 = self.small_font.render("Then: L-Click=Move", True, DARK_GRAY)
+                hint_text2 = self.small_font.render("Then click to select", True, DARK_GRAY)
                 self.screen.blit(hint_text2, (self.palette_rect.x + 10, layer_y))
                 layer_y += 18
-                hint_text3 = self.small_font.render("R-Click=Resize", True, DARK_GRAY)
+                hint_text3 = self.small_font.render("Canvas: L=Move R=Resize", True, DARK_GRAY)
                 self.screen.blit(hint_text3, (self.palette_rect.x + 10, layer_y))
             else:
                 for idx, bg_img in enumerate(layer_images):
