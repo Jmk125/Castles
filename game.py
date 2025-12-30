@@ -16,7 +16,8 @@ TILE_SIZE = 16
 FPS = 60
 GRAVITY = 0.5
 MAX_FALL_SPEED = 10
-CAMERA_PLAYER_VERTICAL_FRACTION = 0.9
+# Higher values push the player lower on the screen.
+CAMERA_PLAYER_VERTICAL_FRACTION = 0.85
 
 # Colors
 WHITE = (255, 255, 255)
@@ -1124,9 +1125,9 @@ class Game:
         viewport_width = self.level.viewport_width
         viewport_height = self.level.viewport_height
 
-        # Center camera on player horizontally, keep player near bottom vertically
+        # Center camera on player horizontally, keep player's feet near bottom vertically
         target_x = self.player.x + self.player.width // 2 - viewport_width // 2
-        target_y = self.player.y + self.player.height // 2 - int(
+        target_y = self.player.y + self.player.height - int(
             viewport_height * CAMERA_PLAYER_VERTICAL_FRACTION
         )
 
