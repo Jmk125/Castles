@@ -352,6 +352,13 @@ class TileEditor:
         # Player start tile
         self.add_tile_type("Player Start", None, [TileProperty.PLAYER_START.value], PURPLE)
 
+    def ensure_player_start_tile_type(self):
+        """Ensure a player start tile type exists (for older levels)."""
+        for tile_type in self.tile_types.values():
+            if TileProperty.PLAYER_START.value in tile_type.properties:
+                return
+        self.add_tile_type("Player Start", None, [TileProperty.PLAYER_START.value], PURPLE)
+
     def _create_placeholder_enemies(self):
         """Create starter enemy types"""
         # Skeleton - basic patrol enemy
@@ -2829,6 +2836,7 @@ class TileEditor:
 
         # Load tile types
         self.tile_types = {}
+        self.next_tile_id = 0
         for tid_str, ttype_data in data['tile_types'].items():
             tid = int(tid_str)
             image = None
@@ -2848,6 +2856,7 @@ class TileEditor:
                 color=tuple(ttype_data['color'])
             )
             self.next_tile_id = max(self.next_tile_id, tid + 1)
+        self.ensure_player_start_tile_type()
 
         # Load tiles
         self.tiles = {'background': {}, 'main': {}, 'foreground': {}}
