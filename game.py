@@ -707,10 +707,10 @@ class Game:
         self.large_font = pygame.font.Font(None, 48)
     
     def load_all_levels(self):
-        """Load all level JSON files from current directory"""
+        """Load all level JSON files from current directory in numerical order"""
         levels = []
-        level_files = sorted(Path('.').glob('level*.json'))
-        
+        level_files = sorted(Path('.').glob('level*.json'), key=lambda p: int(''.join(filter(str.isdigit, p.stem)) or 0))
+
         for filepath in level_files:
             try:
                 level = Level(str(filepath))
@@ -718,7 +718,7 @@ class Game:
                 print(f"Loaded level: {filepath}")
             except Exception as e:
                 print(f"Error loading {filepath}: {e}")
-        
+
         return levels
     
     def update_camera(self):
@@ -827,11 +827,21 @@ class Game:
         return False
 
     def advance_level(self):
-        """Advance to the next level or restart current level"""
-        # For now, just restart the current level
-        # In the future, this could load a different level file
-        print("Level complete! Restarting level...")
-        self.level = Level(self.level.filename)
+        """Advance to the next level or restart current level if no next level"""
+        # Try to move to next level
+        next_level_index = self.current_level_index + 1
+
+        if next_level_index < len(self.levels):
+            # Move to next level
+            self.current_level_index = next_level_index
+            self.level = self.levels[self.current_level_index]
+            print(f"Level complete! Moving to level {self.current_level_index + 1}")
+        else:
+            # No more levels, restart current level
+            print("Level complete! No more levels, restarting current level...")
+            self.level = Level(self.level.filename)
+
+        # Reset player
         self.player.x = 100
         self.player.y = 100
         self.player.health = self.player.max_health
