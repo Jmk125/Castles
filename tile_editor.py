@@ -182,6 +182,7 @@ class BackgroundImage:
     height: int
     repeat_x: bool = False  # Repeat horizontally
     repeat_y: bool = False  # Repeat vertically
+    parallax_factor: float = 0.5  # Parallax scroll speed (0.0 = no scroll, 1.0 = scroll with camera)
 
     def to_dict(self):
         return {
@@ -192,7 +193,8 @@ class BackgroundImage:
             'width': self.width,
             'height': self.height,
             'repeat_x': self.repeat_x,
-            'repeat_y': self.repeat_y
+            'repeat_y': self.repeat_y,
+            'parallax_factor': self.parallax_factor
         }
 
 class Tool(Enum):
@@ -1286,6 +1288,8 @@ class TileEditor:
             try:
                 image = pygame.image.load(filepath)
                 # Add to current layer at a default position
+                # Calculate parallax factor: layer 0=0.1, 1=0.3, 2=0.5, 3=0.7
+                parallax_factor = 0.1 + (self.current_bg_layer * 0.2)
                 bg_img = BackgroundImage(
                     layer_index=self.current_bg_layer,
                     image_path=filepath,
@@ -1295,7 +1299,8 @@ class TileEditor:
                     width=image.get_width(),
                     height=image.get_height(),
                     repeat_x=False,
-                    repeat_y=False
+                    repeat_y=False,
+                    parallax_factor=parallax_factor
                 )
                 self.background_layers.append(bg_img)
                 self.selected_bg_image_index = len(self.background_layers) - 1
@@ -2785,8 +2790,11 @@ class TileEditor:
                         print(f"Error loading background layer image: {e}")
 
                 if image:
+                    # Calculate default parallax factor if not in saved data
+                    layer_idx = bg_data['layer_index']
+                    default_parallax = 0.1 + (layer_idx * 0.2)
                     bg_img = BackgroundImage(
-                        layer_index=bg_data['layer_index'],
+                        layer_index=layer_idx,
                         image_path=bg_data['image_path'],
                         image=image,
                         x=bg_data['x'],
@@ -2794,7 +2802,8 @@ class TileEditor:
                         width=bg_data['width'],
                         height=bg_data['height'],
                         repeat_x=bg_data.get('repeat_x', False),
-                        repeat_y=bg_data.get('repeat_y', False)
+                        repeat_y=bg_data.get('repeat_y', False),
+                        parallax_factor=bg_data.get('parallax_factor', default_parallax)
                     )
                     self.background_layers.append(bg_img)
 
