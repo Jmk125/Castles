@@ -980,7 +980,7 @@ class TileEditor:
         if self.show_property_editor:
             # Property editor bounds (must match draw_property_editor)
             editor_x = self.palette_rect.x + 20
-            editor_y = 150
+            editor_y = self.palette_rect.y + 150
             editor_width = self.palette_width - 40
             editor_height = 450
             editor_rect = pygame.Rect(editor_x, editor_y, editor_width, editor_height)
@@ -999,7 +999,7 @@ class TileEditor:
         # Check if clicking in enemy editor dialog
         if self.show_enemy_editor:
             editor_x = self.palette_rect.x + 20
-            editor_y = 100
+            editor_y = self.palette_rect.y + 100
             editor_width = self.palette_width - 40
             editor_height = 550
             editor_rect = pygame.Rect(editor_x, editor_y, editor_width, editor_height)
@@ -1016,7 +1016,7 @@ class TileEditor:
         # Check if clicking in collectible editor dialog
         if self.show_collectible_editor:
             editor_x = self.palette_rect.x + 20
-            editor_y = 100
+            editor_y = self.palette_rect.y + 100
             editor_width = self.palette_width - 40
             editor_height = 500
             editor_rect = pygame.Rect(editor_x, editor_y, editor_width, editor_height)
@@ -1031,7 +1031,7 @@ class TileEditor:
                 return
 
         # Check tab buttons (4 tabs in 2 rows)
-        y_offset = 10
+        y_offset = self.palette_rect.y + 10
         tab_width = (self.palette_width - 40) // 2
         tab_height = 25
         tab_x = self.palette_rect.x + 10
@@ -2168,14 +2168,14 @@ class TileEditor:
             return
         
         # Semi-transparent overlay
-        overlay = pygame.Surface((self.palette_width, SCREEN_HEIGHT))
+        overlay = pygame.Surface((self.palette_width, SCREEN_HEIGHT - TOP_BAR_HEIGHT))
         overlay.set_alpha(200)
         overlay.fill(LIGHT_GRAY)
-        self.screen.blit(overlay, (self.palette_rect.x, 0))
-        
+        self.screen.blit(overlay, (self.palette_rect.x, self.palette_rect.y))
+
         # Editor box
         editor_x = self.palette_rect.x + 20
-        editor_y = 150
+        editor_y = self.palette_rect.y + 150
         editor_width = self.palette_width - 40
         editor_height = 450
         
@@ -2268,14 +2268,14 @@ class TileEditor:
             return
 
         # Semi-transparent overlay
-        overlay = pygame.Surface((self.palette_width, SCREEN_HEIGHT))
+        overlay = pygame.Surface((self.palette_width, SCREEN_HEIGHT - TOP_BAR_HEIGHT))
         overlay.set_alpha(200)
         overlay.fill(LIGHT_GRAY)
-        self.screen.blit(overlay, (self.palette_rect.x, 0))
+        self.screen.blit(overlay, (self.palette_rect.x, self.palette_rect.y))
 
         # Editor box
         editor_x = self.palette_rect.x + 20
-        editor_y = 100
+        editor_y = self.palette_rect.y + 100
         editor_width = self.palette_width - 40
         editor_height = 550
 
@@ -2417,14 +2417,14 @@ class TileEditor:
             return
 
         # Semi-transparent overlay
-        overlay = pygame.Surface((self.palette_width, SCREEN_HEIGHT))
+        overlay = pygame.Surface((self.palette_width, SCREEN_HEIGHT - TOP_BAR_HEIGHT))
         overlay.set_alpha(200)
         overlay.fill(LIGHT_GRAY)
-        self.screen.blit(overlay, (self.palette_rect.x, 0))
+        self.screen.blit(overlay, (self.palette_rect.x, self.palette_rect.y))
 
         # Editor box
         editor_x = self.palette_rect.x + 20
-        editor_y = 100
+        editor_y = self.palette_rect.y + 100
         editor_width = self.palette_width - 40
         editor_height = 500
 
