@@ -20,7 +20,7 @@ MAX_FALL_SPEED = 10
 # Fraction of the viewport height where the player's feet sit within the view.
 CAMERA_VERTICAL_TRIGGER_FRACTION = 0.8
 # Fractional deadzone above/below the trigger where the camera does not move.
-CAMERA_VERTICAL_DEADZONE_UP_FRACTION = 0.08
+CAMERA_VERTICAL_DEADZONE_UP_FRACTION = 0.5
 CAMERA_VERTICAL_DEADZONE_DOWN_FRACTION = 0.08
 
 # Colors
