@@ -2,6 +2,7 @@ import pygame
 import json
 import os
 import argparse
+import importlib.util
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
@@ -94,6 +95,7 @@ class EnemyType:
     projectile_speed: float = 4.0  # Speed of projectiles for SHOOTER AI
     fire_rate: int = 120  # Cooldown frames between shots for SHOOTER AI
     projectile_damage: int = 1  # Damage dealt by projectiles for SHOOTER AI
+    behavior_script: Optional[str] = None  # Path to custom behavior script
 
 @dataclass
 class CollectibleType:
@@ -353,6 +355,9 @@ class Player:
                            (sword_draw_x, sword_draw_y, attack_rect.width, attack_rect.height), 2)
 
 class Enemy:
+    # Class-level cache for loaded behavior scripts
+    _script_cache: Dict[str, any] = {}
+
     def __init__(self, x: int, y: int, enemy_type: EnemyType, patrol_range: int = 100):
         self.x = float(x)
         self.y = float(y)
@@ -372,8 +377,43 @@ class Enemy:
         self.shoot_timer = 0
         self.shoot_range = enemy_type.shoot_range
 
+        # Load custom behavior script if specified
+        self.custom_update = None
+        if enemy_type.behavior_script:
+            self._load_behavior_script(enemy_type.behavior_script)
+
     def get_rect(self) -> pygame.Rect:
         return pygame.Rect(int(self.x), int(self.y), self.width, self.height)
+
+    def _load_behavior_script(self, script_path: str):
+        """Load a custom behavior script and cache it"""
+        try:
+            # Check cache first
+            if script_path in Enemy._script_cache:
+                module = Enemy._script_cache[script_path]
+            else:
+                # Load the script module
+                if not os.path.exists(script_path):
+                    print(f"Warning: Behavior script not found: {script_path}")
+                    return
+
+                spec = importlib.util.spec_from_file_location("behavior_module", script_path)
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    Enemy._script_cache[script_path] = module
+                else:
+                    print(f"Warning: Could not load behavior script: {script_path}")
+                    return
+
+            # Extract the update function from the module
+            if hasattr(module, 'update'):
+                self.custom_update = module.update
+                print(f"Loaded custom behavior from: {script_path}")
+            else:
+                print(f"Warning: Behavior script missing 'update' function: {script_path}")
+        except Exception as e:
+            print(f"Error loading behavior script {script_path}: {e}")
 
     def update(self, player, level):
         """Update enemy AI and physics - returns list of new projectiles spawned"""
@@ -381,6 +421,18 @@ class Enemy:
 
         if not self.alive:
             return new_projectiles
+
+        # Use custom behavior script if available
+        if self.custom_update:
+            try:
+                result = self.custom_update(self, player, level)
+                # Custom script can return projectiles or None
+                if result:
+                    new_projectiles.extend(result)
+                return new_projectiles
+            except Exception as e:
+                print(f"Error executing custom behavior script: {e}")
+                # Fall through to default behavior on error
 
         # Update shoot timer
         if self.shoot_timer > 0:
@@ -693,7 +745,8 @@ class Level:
                     shoot_range=etype_data.get('shoot_range', 200.0),
                     projectile_speed=etype_data.get('projectile_speed', 4.0),
                     fire_rate=etype_data.get('fire_rate', 120),
-                    projectile_damage=etype_data.get('projectile_damage', 1)
+                    projectile_damage=etype_data.get('projectile_damage', 1),
+                    behavior_script=etype_data.get('behavior_script')
                 )
 
         # Load enemies
