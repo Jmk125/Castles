@@ -131,7 +131,8 @@ class Player:
         self.on_ground = False
         self.on_ladder = False
         self.climbing = False
-        
+        self.fall_through_platform = False  # Track intentional platform fall-through
+
         # Player stats
         self.speed = 3
         self.jump_strength = 10
@@ -210,6 +211,11 @@ class Player:
         if (keys[pygame.K_UP] or keys[pygame.K_w]) and self.on_ground and not self.on_ladder:
             self.vel_y = -self.jump_strength
             self.on_ground = False
+            # Set fall-through flag if down is pressed while jumping
+            if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+                self.fall_through_platform = True
+            else:
+                self.fall_through_platform = False
         
         # Apply gravity if not climbing
         if not self.climbing:
@@ -278,6 +284,7 @@ class Player:
                     self.vel_y = 0
                     self.on_ground = True
                     self.climbing = False
+                    self.fall_through_platform = False  # Clear flag when landing on solid ground
                 elif self.vel_y < 0:  # Moving up
                     self.y = tile_rect.bottom
                     self.vel_y = 0
@@ -285,15 +292,17 @@ class Player:
         # Check platform tiles (only from above)
         for (tile_x, tile_y), tile in level.get_platform_tiles():
             tile_rect = pygame.Rect(tile_x * TILE_SIZE, tile_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-            
+
             # Only collide if falling and player's bottom was above platform top last frame
-            if player_rect.colliderect(tile_rect) and self.vel_y > 0:
+            # Skip collision if player pressed down+jump to intentionally fall through
+            if player_rect.colliderect(tile_rect) and self.vel_y > 0 and not self.fall_through_platform:
                 # Check if player's feet are within platform tolerance
                 if player_rect.bottom <= tile_rect.top + 8:
                     self.y = tile_rect.top - self.height
                     self.vel_y = 0
                     self.on_ground = True
                     self.climbing = False
+                    self.fall_through_platform = False  # Clear flag when landing
     
     def check_hazards(self, level):
         """Check if player is touching hazards"""
