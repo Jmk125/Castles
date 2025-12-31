@@ -659,8 +659,8 @@ class TileEditor:
                 self.running = False
             
             elif event.type == pygame.KEYDOWN:
-                # Handle text input for property editor
-                if self.show_property_editor and self.input_active:
+                # Handle text input for property editor, enemy editor, and collectible editor
+                if (self.show_property_editor or self.show_enemy_editor or self.show_collectible_editor) and self.input_active:
                     if event.key == pygame.K_RETURN:
                         self.input_active = False
                         self.apply_input_text()
