@@ -102,7 +102,7 @@ class CollectibleType:
 
 @dataclass
 class BackgroundImage:
-    layer_index: int  # 0-3 (0 = far background, 3 = closest)
+    layer_index: int  # 0-3 for background (0 = far, 3 = near), any value for foreground
     image_path: str
     image: Optional[pygame.Surface]
     x: int
@@ -111,7 +111,8 @@ class BackgroundImage:
     height: int
     repeat_x: bool
     repeat_y: bool
-    parallax_factor: float
+    parallax_factor: float  # 1.0 = moves with tiles, <1.0 = slower, >1.0 = faster
+    is_foreground: bool = False  # If True, renders in front of tiles/player
 
 class Player:
     def __init__(self, x: float, y: float):
@@ -671,7 +672,8 @@ class Level:
                         height=bg_data['height'],
                         repeat_x=bg_data.get('repeat_x', False),
                         repeat_y=bg_data.get('repeat_y', False),
-                        parallax_factor=bg_data.get('parallax_factor', default_parallax)
+                        parallax_factor=bg_data.get('parallax_factor', default_parallax),
+                        is_foreground=bg_data.get('is_foreground', False)
                     )
                     self.background_layers.append(bg_img)
                 except Exception as e:
@@ -754,49 +756,59 @@ class Level:
                     ladder_tiles.append(((tile_x, tile_y), tile_type))
         return ladder_tiles
     
+    def _draw_background_layer(self, screen, bg_img, camera_x, camera_y):
+        """Helper method to draw a single background layer"""
+        if not bg_img.image:
+            return
+
+        # Apply parallax effect: further layers scroll slower
+        parallax_x = bg_img.x - (camera_x * bg_img.parallax_factor)
+        parallax_y = bg_img.y - (camera_y * bg_img.parallax_factor)
+
+        # Scale and draw the background
+        scaled_bg = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
+        if bg_img.repeat_x or bg_img.repeat_y:
+            tile_width = bg_img.width
+            tile_height = bg_img.height
+            start_x = parallax_x
+            start_y = parallax_y
+
+            if bg_img.repeat_x and tile_width > 0:
+                start_x = (parallax_x % tile_width) - tile_width
+            if bg_img.repeat_y and tile_height > 0:
+                start_y = (parallax_y % tile_height) - tile_height
+
+            if bg_img.repeat_x and bg_img.repeat_y:
+                tile_x = start_x
+                while tile_x < SCREEN_WIDTH:
+                    tile_y = start_y
+                    while tile_y < SCREEN_HEIGHT:
+                        screen.blit(scaled_bg, (tile_x, tile_y))
+                        tile_y += tile_height
+                    tile_x += tile_width
+            elif bg_img.repeat_x:
+                tile_x = start_x
+                while tile_x < SCREEN_WIDTH:
+                    screen.blit(scaled_bg, (tile_x, parallax_y))
+                    tile_x += tile_width
+            elif bg_img.repeat_y:
+                tile_y = start_y
+                while tile_y < SCREEN_HEIGHT:
+                    screen.blit(scaled_bg, (parallax_x, tile_y))
+                    tile_y += tile_height
+        else:
+            screen.blit(scaled_bg, (parallax_x, parallax_y))
+
     def draw(self, screen, camera_x, camera_y):
         """Draw the level"""
-        # Draw new parallax background layers (sorted from far to near: 0, 1, 2, 3)
-        sorted_backgrounds = sorted(self.background_layers, key=lambda bg: bg.layer_index)
+        # Separate background and foreground layers
+        background_layers = [bg for bg in self.background_layers if not bg.is_foreground]
+        foreground_layers = [bg for bg in self.background_layers if bg.is_foreground]
+
+        # Draw background layers (sorted from far to near by layer_index)
+        sorted_backgrounds = sorted(background_layers, key=lambda bg: bg.layer_index)
         for bg_img in sorted_backgrounds:
-            if bg_img.image:
-                # Apply parallax effect: further layers scroll slower
-                parallax_x = bg_img.x - (camera_x * bg_img.parallax_factor)
-                parallax_y = bg_img.y - (camera_y * bg_img.parallax_factor)
-
-                # Scale and draw the background
-                scaled_bg = pygame.transform.scale(bg_img.image, (bg_img.width, bg_img.height))
-                if bg_img.repeat_x or bg_img.repeat_y:
-                    tile_width = bg_img.width
-                    tile_height = bg_img.height
-                    start_x = parallax_x
-                    start_y = parallax_y
-
-                    if bg_img.repeat_x and tile_width > 0:
-                        start_x = (parallax_x % tile_width) - tile_width
-                    if bg_img.repeat_y and tile_height > 0:
-                        start_y = (parallax_y % tile_height) - tile_height
-
-                    if bg_img.repeat_x and bg_img.repeat_y:
-                        tile_x = start_x
-                        while tile_x < SCREEN_WIDTH:
-                            tile_y = start_y
-                            while tile_y < SCREEN_HEIGHT:
-                                screen.blit(scaled_bg, (tile_x, tile_y))
-                                tile_y += tile_height
-                            tile_x += tile_width
-                    elif bg_img.repeat_x:
-                        tile_x = start_x
-                        while tile_x < SCREEN_WIDTH:
-                            screen.blit(scaled_bg, (tile_x, parallax_y))
-                            tile_x += tile_width
-                    elif bg_img.repeat_y:
-                        tile_y = start_y
-                        while tile_y < SCREEN_HEIGHT:
-                            screen.blit(scaled_bg, (parallax_x, tile_y))
-                            tile_y += tile_height
-                else:
-                    screen.blit(scaled_bg, (parallax_x, parallax_y))
+            self._draw_background_layer(screen, bg_img, camera_x, camera_y)
 
         # Draw legacy background image if loaded (for backwards compatibility)
         if self.background_image and self.background_width > 0 and self.background_height > 0:
@@ -835,6 +847,11 @@ class Level:
         # Draw enemies
         for enemy in self.enemies:
             enemy.draw(screen, camera_x, camera_y)
+
+        # Draw foreground layers (sorted by layer_index for consistent ordering)
+        sorted_foregrounds = sorted(foreground_layers, key=lambda bg: bg.layer_index)
+        for bg_img in sorted_foregrounds:
+            self._draw_background_layer(screen, bg_img, camera_x, camera_y)
 
 class HighScoreManager:
     """Manages high scores with persistence"""
@@ -901,6 +918,15 @@ class TitleScreen:
         # Animation
         self.pulse_timer = 0
 
+        # Load title image if available
+        self.title_image = None
+        try:
+            if os.path.exists("tiles/title.png"):
+                self.title_image = pygame.image.load("tiles/title.png").convert_alpha()
+        except Exception as e:
+            print(f"Could not load title image: {e}")
+            self.title_image = None
+
     def handle_input(self, event) -> Optional[str]:
         """Handle menu input, returns action or None"""
         if event.type == pygame.KEYDOWN:
@@ -929,27 +955,34 @@ class TitleScreen:
                 if (i + j) % 80 == 0:
                     pygame.draw.rect(self.screen, (30, 20, 40), (i, j, 20, 20))
 
-        # Title with shadow effect
-        title_text = "CASTLES"
-        # Shadow
-        title_shadow = self.title_font.render(title_text, True, BLACK)
-        shadow_rect = title_shadow.get_rect(center=(SCREEN_WIDTH // 2 + 4, 120 + 4))
-        self.screen.blit(title_shadow, shadow_rect)
-        # Main title
-        pulse_offset = int(5 * abs(((self.pulse_timer % 60) / 60.0) * 2 - 1))
-        title_color_pulsed = (
-            min(255, self.title_color[0] + pulse_offset),
-            min(255, self.title_color[1] + pulse_offset),
-            min(255, self.title_color[2] + pulse_offset)
-        )
-        title = self.title_font.render(title_text, True, title_color_pulsed)
-        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 120))
-        self.screen.blit(title, title_rect)
+        # Draw title - use image if available, otherwise use text
+        if self.title_image:
+            # Display the title image centered at the top
+            img_rect = self.title_image.get_rect(center=(SCREEN_WIDTH // 2, 150))
+            self.screen.blit(self.title_image, img_rect)
+        else:
+            # Fallback to text rendering
+            # Title with shadow effect
+            title_text = "CASTLES"
+            # Shadow
+            title_shadow = self.title_font.render(title_text, True, BLACK)
+            shadow_rect = title_shadow.get_rect(center=(SCREEN_WIDTH // 2 + 4, 120 + 4))
+            self.screen.blit(title_shadow, shadow_rect)
+            # Main title
+            pulse_offset = int(5 * abs(((self.pulse_timer % 60) / 60.0) * 2 - 1))
+            title_color_pulsed = (
+                min(255, self.title_color[0] + pulse_offset),
+                min(255, self.title_color[1] + pulse_offset),
+                min(255, self.title_color[2] + pulse_offset)
+            )
+            title = self.title_font.render(title_text, True, title_color_pulsed)
+            title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 120))
+            self.screen.blit(title, title_rect)
 
-        # Subtitle
-        subtitle = self.font.render("A Retro Adventure", True, self.menu_color)
-        subtitle_rect = subtitle.get_rect(center=(SCREEN_WIDTH // 2, 180))
-        self.screen.blit(subtitle, subtitle_rect)
+            # Subtitle
+            subtitle = self.font.render("A Retro Adventure", True, self.menu_color)
+            subtitle_rect = subtitle.get_rect(center=(SCREEN_WIDTH // 2, 180))
+            self.screen.blit(subtitle, subtitle_rect)
 
         # Menu items
         menu_start_y = 300
