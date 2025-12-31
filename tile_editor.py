@@ -177,7 +177,7 @@ class CollectibleInstance:
 
 @dataclass
 class BackgroundImage:
-    layer_index: int  # 0-3 (0 = far background, 3 = closest)
+    layer_index: int  # 0-3 for background (0 = far, 3 = near), any value for foreground
     image_path: str
     image: Optional[pygame.Surface]
     x: int
@@ -187,6 +187,7 @@ class BackgroundImage:
     repeat_x: bool = False  # Repeat horizontally
     repeat_y: bool = False  # Repeat vertically
     parallax_factor: float = 0.5  # Parallax scroll speed (0.0 = no scroll, 1.0 = scroll with camera)
+    is_foreground: bool = False  # If True, renders in front of tiles/player
     aspect_ratio_locked: bool = True  # Lock aspect ratio when resizing
 
     def to_dict(self):
@@ -200,6 +201,7 @@ class BackgroundImage:
             'repeat_x': self.repeat_x,
             'repeat_y': self.repeat_y,
             'parallax_factor': self.parallax_factor,
+            'is_foreground': self.is_foreground,
             'aspect_ratio_locked': self.aspect_ratio_locked
         }
 
@@ -1385,6 +1387,7 @@ class TileEditor:
                     repeat_x=False,
                     repeat_y=False,
                     parallax_factor=parallax_factor,
+                    is_foreground=False,
                     aspect_ratio_locked=True
                 )
                 self.background_layers.append(bg_img)
@@ -2994,6 +2997,7 @@ class TileEditor:
                         repeat_x=bg_data.get('repeat_x', False),
                         repeat_y=bg_data.get('repeat_y', False),
                         parallax_factor=bg_data.get('parallax_factor', default_parallax),
+                        is_foreground=bg_data.get('is_foreground', False),
                         aspect_ratio_locked=bg_data.get('aspect_ratio_locked', True)
                     )
                     self.background_layers.append(bg_img)
