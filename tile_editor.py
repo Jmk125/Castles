@@ -1259,6 +1259,8 @@ class TileEditor:
                 repeat_y_btn = pygame.Rect(item_rect.x + 100, item_rect.y + 40, 35, 15)
                 aspect_lock_btn = pygame.Rect(item_rect.x + 140, item_rect.y + 40, 50, 15)
                 foreground_btn = pygame.Rect(item_rect.x + 60, item_rect.y + 57, 60, 15)
+                parallax_minus_btn = pygame.Rect(item_rect.x + 125, item_rect.y + 57, 15, 15)
+                parallax_plus_btn = pygame.Rect(item_rect.x + 220, item_rect.y + 57, 15, 15)
 
                 if repeat_x_btn.collidepoint(pos):
                     bg_img.repeat_x = not bg_img.repeat_x
@@ -1274,6 +1276,14 @@ class TileEditor:
 
                 if foreground_btn.collidepoint(pos):
                     bg_img.is_foreground = not bg_img.is_foreground
+                    return
+
+                if parallax_minus_btn.collidepoint(pos):
+                    bg_img.parallax_factor = max(0.0, bg_img.parallax_factor - 0.1)
+                    return
+
+                if parallax_plus_btn.collidepoint(pos):
+                    bg_img.parallax_factor = min(2.0, bg_img.parallax_factor + 0.1)
                     return
 
                 # Select this image and pan camera to show it
@@ -2153,9 +2163,25 @@ class TileEditor:
                     fg_text = self.small_font.render("Foreground", True, BLACK)
                     self.screen.blit(fg_text, (foreground_btn.x + 2, foreground_btn.y + 1))
 
-                    # Display parallax factor
-                    parallax_text = self.small_font.render(f"Parallax: {bg_img.parallax_factor:.2f}", True, DARK_GRAY)
-                    self.screen.blit(parallax_text, (item_rect.x + 125, item_rect.y + 57))
+                    # Parallax factor controls with +/- buttons
+                    parallax_minus_btn = pygame.Rect(item_rect.x + 125, item_rect.y + 57, 15, 15)
+                    parallax_plus_btn = pygame.Rect(item_rect.x + 220, item_rect.y + 57, 15, 15)
+
+                    # Minus button
+                    pygame.draw.rect(self.screen, WHITE, parallax_minus_btn)
+                    pygame.draw.rect(self.screen, BLACK, parallax_minus_btn, 1)
+                    minus_text = self.small_font.render("-", True, BLACK)
+                    self.screen.blit(minus_text, (parallax_minus_btn.x + 4, parallax_minus_btn.y))
+
+                    # Display parallax factor value
+                    parallax_text = self.small_font.render(f"P:{bg_img.parallax_factor:.1f}", True, DARK_GRAY)
+                    self.screen.blit(parallax_text, (item_rect.x + 145, item_rect.y + 57))
+
+                    # Plus button
+                    pygame.draw.rect(self.screen, WHITE, parallax_plus_btn)
+                    pygame.draw.rect(self.screen, BLACK, parallax_plus_btn, 1)
+                    plus_text = self.small_font.render("+", True, BLACK)
+                    self.screen.blit(plus_text, (parallax_plus_btn.x + 4, parallax_plus_btn.y))
 
                     # Delete button
                     del_button = pygame.Rect(item_rect.x + item_rect.width - 25, item_rect.y + 5, 20, 20)
