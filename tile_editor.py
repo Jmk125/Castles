@@ -1240,7 +1240,7 @@ class TileEditor:
 
             for idx, bg_img in enumerate(layer_images):
                 bg_img_idx = self.background_layers.index(bg_img)
-                item_rect = pygame.Rect(self.palette_rect.x + 10, layer_y, self.palette_width - 20, 60)
+                item_rect = pygame.Rect(self.palette_rect.x + 10, layer_y, self.palette_width - 20, 75)
 
                 if not item_rect.collidepoint(pos):
                     layer_y += 65
@@ -1258,6 +1258,7 @@ class TileEditor:
                 repeat_x_btn = pygame.Rect(item_rect.x + 60, item_rect.y + 40, 35, 15)
                 repeat_y_btn = pygame.Rect(item_rect.x + 100, item_rect.y + 40, 35, 15)
                 aspect_lock_btn = pygame.Rect(item_rect.x + 140, item_rect.y + 40, 50, 15)
+                foreground_btn = pygame.Rect(item_rect.x + 60, item_rect.y + 57, 60, 15)
 
                 if repeat_x_btn.collidepoint(pos):
                     bg_img.repeat_x = not bg_img.repeat_x
@@ -1269,6 +1270,10 @@ class TileEditor:
 
                 if aspect_lock_btn.collidepoint(pos):
                     bg_img.aspect_ratio_locked = not bg_img.aspect_ratio_locked
+                    return
+
+                if foreground_btn.collidepoint(pos):
+                    bg_img.is_foreground = not bg_img.is_foreground
                     return
 
                 # Select this image and pan camera to show it
@@ -1283,7 +1288,7 @@ class TileEditor:
                                            self.level_height * TILE_SIZE - self.canvas_rect.height))
                 return
 
-                layer_y += 65
+                layer_y += 80
     
     def handle_property_editor_click(self, pos):
         """Handle clicks in the property editor dialog"""
@@ -2074,7 +2079,7 @@ class TileEditor:
             else:
                 for idx, bg_img in enumerate(layer_images):
                     bg_img_idx = self.background_layers.index(bg_img)
-                    item_rect = pygame.Rect(self.palette_rect.x + 10, layer_y, self.palette_width - 20, 60)
+                    item_rect = pygame.Rect(self.palette_rect.x + 10, layer_y, self.palette_width - 20, 75)
 
                     # Highlight if selected
                     if bg_img_idx == self.selected_bg_image_index:
@@ -2141,6 +2146,17 @@ class TileEditor:
                     ar_text = self.small_font.render("Lock AR", True, BLACK)
                     self.screen.blit(ar_text, (aspect_lock_btn.x + 2, aspect_lock_btn.y + 1))
 
+                    # Foreground toggle button
+                    foreground_btn = pygame.Rect(item_rect.x + 60, item_rect.y + 57, 60, 15)
+                    pygame.draw.rect(self.screen, BLUE if bg_img.is_foreground else WHITE, foreground_btn)
+                    pygame.draw.rect(self.screen, BLACK, foreground_btn, 1)
+                    fg_text = self.small_font.render("Foreground", True, BLACK)
+                    self.screen.blit(fg_text, (foreground_btn.x + 2, foreground_btn.y + 1))
+
+                    # Display parallax factor
+                    parallax_text = self.small_font.render(f"Parallax: {bg_img.parallax_factor:.2f}", True, DARK_GRAY)
+                    self.screen.blit(parallax_text, (item_rect.x + 125, item_rect.y + 57))
+
                     # Delete button
                     del_button = pygame.Rect(item_rect.x + item_rect.width - 25, item_rect.y + 5, 20, 20)
                     pygame.draw.rect(self.screen, RED, del_button)
@@ -2148,7 +2164,7 @@ class TileEditor:
                     del_text = self.small_font.render("X", True, WHITE)
                     self.screen.blit(del_text, (del_button.x + 5, del_button.y + 2))
 
-                    layer_y += 65
+                    layer_y += 80
 
             self.max_scroll = 0  # No scrolling needed for background tab
 
