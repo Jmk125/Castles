@@ -214,8 +214,10 @@ class Player:
             # Set fall-through flag if down is pressed while jumping
             if keys[pygame.K_DOWN] or keys[pygame.K_s]:
                 self.fall_through_platform = True
+                print("DEBUG: DOWN+JUMP - fall_through_platform set to TRUE")
             else:
                 self.fall_through_platform = False
+                print("DEBUG: NORMAL JUMP - fall_through_platform set to FALSE")
         
         # Apply gravity if not climbing
         if not self.climbing:
@@ -295,14 +297,21 @@ class Player:
 
             # Only collide if falling and player's bottom was above platform top last frame
             # Skip collision if player pressed down+jump to intentionally fall through
-            if player_rect.colliderect(tile_rect) and self.vel_y > 0 and not self.fall_through_platform:
-                # Check if player's feet are within platform tolerance
-                if player_rect.bottom <= tile_rect.top + 8:
-                    self.y = tile_rect.top - self.height
-                    self.vel_y = 0
-                    self.on_ground = True
-                    self.climbing = False
-                    self.fall_through_platform = False  # Clear flag when landing
+            if player_rect.colliderect(tile_rect) and self.vel_y > 0:
+                print(f"DEBUG: Platform collision - fall_through={self.fall_through_platform}, vel_y={self.vel_y}, bottom={player_rect.bottom}, top={tile_rect.top}")
+                if not self.fall_through_platform:
+                    # Check if player's feet are within platform tolerance
+                    if player_rect.bottom <= tile_rect.top + 8:
+                        print(f"DEBUG: LANDING on platform")
+                        self.y = tile_rect.top - self.height
+                        self.vel_y = 0
+                        self.on_ground = True
+                        self.climbing = False
+                        self.fall_through_platform = False  # Clear flag when landing
+                    else:
+                        print(f"DEBUG: Feet not within tolerance - falling through!")
+                else:
+                    print(f"DEBUG: Intentionally falling through platform")
     
     def check_hazards(self, level):
         """Check if player is touching hazards"""
