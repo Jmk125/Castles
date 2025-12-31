@@ -47,6 +47,7 @@ class EnemyAI(Enum):
     PATROL = "patrol"
     CHASE = "chase"
     FLYING = "flying"
+    SHOOTER = "shooter"
 
 # Collectible Types
 class CollectibleEffect(Enum):
@@ -361,18 +362,57 @@ class Enemy:
         self.start_x = x  # For patrol AI
         self.alive = True
 
+        # Shooting behavior (for SHOOTER AI type)
+        self.shoot_cooldown = 120  # frames between shots (2 seconds at 60fps)
+        self.shoot_timer = 0
+        self.shoot_range = 200  # pixels - only shoot if player is within this range
+
     def get_rect(self) -> pygame.Rect:
         return pygame.Rect(int(self.x), int(self.y), self.width, self.height)
 
     def update(self, player, level):
-        """Update enemy AI and physics"""
+        """Update enemy AI and physics - returns list of new projectiles spawned"""
+        new_projectiles = []
+
         if not self.alive:
-            return
+            return new_projectiles
+
+        # Update shoot timer
+        if self.shoot_timer > 0:
+            self.shoot_timer -= 1
 
         # AI behavior based on type
         if self.enemy_type.ai_type == EnemyAI.STATIONARY.value:
             # Don't move
             pass
+
+        elif self.enemy_type.ai_type == EnemyAI.SHOOTER.value:
+            # Stationary enemy that shoots at player when in range
+            # Calculate distance to player
+            dx = player.x - self.x
+            dy = player.y - self.y
+            distance = (dx**2 + dy**2) ** 0.5
+
+            # Shoot if player is in range and cooldown is ready
+            if distance <= self.shoot_range and self.shoot_timer <= 0:
+                # Create a projectile aimed at the player
+                projectile_x = self.x + self.width / 2
+                projectile_y = self.y + self.height / 2
+                target_x = player.x + player.width / 2
+                target_y = player.y + player.height / 2
+
+                projectile = Projectile(
+                    x=projectile_x,
+                    y=projectile_y,
+                    target_x=target_x,
+                    target_y=target_y,
+                    speed=3.0,
+                    damage=self.enemy_type.damage
+                )
+                new_projectiles.append(projectile)
+
+                # Reset shoot timer
+                self.shoot_timer = self.shoot_cooldown
 
         elif self.enemy_type.ai_type == EnemyAI.PATROL.value:
             # Move back and forth within patrol range
@@ -428,6 +468,8 @@ class Enemy:
                 self.x += self.vel_x
                 self.y += self.vel_y
 
+        return new_projectiles
+
     def take_damage(self, amount: int):
         """Take damage and check if dead"""
         self.health -= amount
@@ -454,6 +496,68 @@ class Enemy:
             health_ratio = self.health / self.enemy_type.health
             pygame.draw.rect(screen, RED, (draw_x, draw_y - 5, bar_width, bar_height))
             pygame.draw.rect(screen, GREEN, (draw_x, draw_y - 5, int(bar_width * health_ratio), bar_height))
+
+class Projectile:
+    """Projectile fired by enemies (like fireballs)"""
+    def __init__(self, x: float, y: float, target_x: float, target_y: float, speed: float = 3.0, damage: int = 10):
+        self.x = x
+        self.y = y
+        self.width = 8
+        self.height = 8
+        self.damage = damage
+        self.active = True
+
+        # Calculate direction towards target
+        dx = target_x - x
+        dy = target_y - y
+        distance = (dx**2 + dy**2) ** 0.5
+
+        if distance > 0:
+            self.vel_x = (dx / distance) * speed
+            self.vel_y = (dy / distance) * speed
+        else:
+            self.vel_x = speed
+            self.vel_y = 0
+
+    def get_rect(self) -> pygame.Rect:
+        return pygame.Rect(int(self.x), int(self.y), self.width, self.height)
+
+    def update(self, level):
+        """Update projectile position and check for collisions with tiles"""
+        if not self.active:
+            return
+
+        self.x += self.vel_x
+        self.y += self.vel_y
+
+        # Check collision with solid tiles
+        projectile_rect = self.get_rect()
+        for (tile_x, tile_y), tile in level.get_solid_tiles():
+            tile_rect = pygame.Rect(tile_x * TILE_SIZE, tile_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+            if projectile_rect.colliderect(tile_rect):
+                self.active = False
+                return
+
+        # Deactivate if out of bounds
+        if self.x < 0 or self.x > level.width * TILE_SIZE or self.y < 0 or self.y > level.height * TILE_SIZE:
+            self.active = False
+
+    def draw(self, screen, camera_x, camera_y):
+        """Draw the projectile as a fireball"""
+        if not self.active:
+            return
+
+        draw_x = int(self.x - camera_x)
+        draw_y = int(self.y - camera_y)
+
+        # Draw fireball as an orange circle with a yellow center
+        center_x = draw_x + self.width // 2
+        center_y = draw_y + self.height // 2
+
+        # Outer orange glow
+        pygame.draw.circle(screen, (255, 140, 0), (center_x, center_y), self.width // 2)
+        # Inner yellow core
+        pygame.draw.circle(screen, (255, 255, 0), (center_x, center_y), self.width // 3)
 
 class Collectible:
     def __init__(self, x: int, y: int, collectible_type: CollectibleType):
@@ -498,6 +602,7 @@ class Level:
         self.enemies: List[Enemy] = []
         self.collectible_types: Dict[int, CollectibleType] = {}
         self.collectibles: List[Collectible] = []
+        self.projectiles: List[Projectile] = []
         self.score = 0
         self.keys_collected = 0
         self.required_collectibles_total = 0
@@ -847,6 +952,10 @@ class Level:
         # Draw enemies
         for enemy in self.enemies:
             enemy.draw(screen, camera_x, camera_y)
+
+        # Draw projectiles
+        for projectile in self.projectiles:
+            projectile.draw(screen, camera_x, camera_y)
 
         # Draw foreground layers (sorted by layer_index for consistent ordering)
         sorted_foregrounds = sorted(foreground_layers, key=lambda bg: bg.layer_index)
@@ -1317,6 +1426,31 @@ class Game:
                 # Remove this break if you want the sword to hit multiple enemies
                 break
 
+    def check_projectile_collisions(self):
+        """Check if any projectiles hit the player"""
+        player_rect = self.player.get_rect()
+
+        for projectile in self.level.projectiles:
+            if not projectile.active:
+                continue
+
+            projectile_rect = projectile.get_rect()
+            if player_rect.colliderect(projectile_rect):
+                # Player takes damage
+                self.player.health -= projectile.damage
+                if self.player.health < 0:
+                    self.player.health = 0
+
+                # Deactivate the projectile
+                projectile.active = False
+
+                # Small knockback
+                dx = projectile.vel_x
+                if dx > 0:
+                    self.player.x += 5  # Push right
+                else:
+                    self.player.x -= 5  # Push left
+
     def check_end_level_collision(self):
         """Check if player touches END_LEVEL tile when requirements are met"""
         # Only check if all requirements are met (collectibles AND enemies)
@@ -1545,14 +1679,23 @@ class Game:
                     # Update
                     self.player.update(keys, self.level)
 
-                    # Update enemies
+                    # Update enemies and collect new projectiles
                     for enemy in self.level.enemies:
-                        enemy.update(self.player, self.level)
+                        new_projectiles = enemy.update(self.player, self.level)
+                        self.level.projectiles.extend(new_projectiles)
+
+                    # Update projectiles
+                    for projectile in self.level.projectiles:
+                        projectile.update(self.level)
+
+                    # Remove inactive projectiles
+                    self.level.projectiles = [p for p in self.level.projectiles if p.active]
 
                     # Check collisions
                     self.check_enemy_collisions()
                     self.check_collectible_collisions()
                     self.check_player_attack_collisions()
+                    self.check_projectile_collisions()
 
                     # Check if player is dead
                     self.check_player_death()
