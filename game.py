@@ -89,6 +89,11 @@ class EnemyType:
     speed: float
     color: Tuple[int, int, int]
     required: bool = False
+    detection_range: float = 300.0  # Range for FLYING/CHASE AI to detect player
+    shoot_range: float = 200.0  # Range for SHOOTER AI to shoot
+    projectile_speed: float = 4.0  # Speed of projectiles for SHOOTER AI
+    fire_rate: int = 120  # Cooldown frames between shots for SHOOTER AI
+    projectile_damage: int = 1  # Damage dealt by projectiles for SHOOTER AI
 
 @dataclass
 class CollectibleType:
@@ -362,10 +367,10 @@ class Enemy:
         self.start_x = x  # For patrol AI
         self.alive = True
 
-        # Shooting behavior (for SHOOTER AI type)
-        self.shoot_cooldown = 120  # frames between shots (2 seconds at 60fps)
+        # Shooting behavior (for SHOOTER AI type) - loaded from enemy_type
+        self.shoot_cooldown = enemy_type.fire_rate
         self.shoot_timer = 0
-        self.shoot_range = 200  # pixels - only shoot if player is within this range
+        self.shoot_range = enemy_type.shoot_range
 
     def get_rect(self) -> pygame.Rect:
         return pygame.Rect(int(self.x), int(self.y), self.width, self.height)
@@ -406,8 +411,8 @@ class Enemy:
                     y=projectile_y,
                     target_x=target_x,
                     target_y=target_y,
-                    speed=3.0,
-                    damage=self.enemy_type.damage
+                    speed=self.enemy_type.projectile_speed,
+                    damage=self.enemy_type.projectile_damage
                 )
                 new_projectiles.append(projectile)
 
@@ -462,7 +467,7 @@ class Enemy:
             dy = player.y - self.y
             distance = (dx**2 + dy**2) ** 0.5
 
-            if distance > 0 and distance < 300:  # Only chase if within range
+            if distance > 0 and distance < self.enemy_type.detection_range:  # Only chase if within range
                 self.vel_x = (dx / distance) * self.enemy_type.speed
                 self.vel_y = (dy / distance) * self.enemy_type.speed
                 self.x += self.vel_x
@@ -683,7 +688,12 @@ class Level:
                     damage=etype_data['damage'],
                     speed=etype_data['speed'],
                     color=tuple(etype_data['color']),
-                    required=etype_data.get('required', False)
+                    required=etype_data.get('required', False),
+                    detection_range=etype_data.get('detection_range', 300.0),
+                    shoot_range=etype_data.get('shoot_range', 200.0),
+                    projectile_speed=etype_data.get('projectile_speed', 4.0),
+                    fire_rate=etype_data.get('fire_rate', 120),
+                    projectile_damage=etype_data.get('projectile_damage', 1)
                 )
 
         # Load enemies

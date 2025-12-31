@@ -112,6 +112,11 @@ class EnemyType:
     color: Tuple[int, int, int]  # Fallback color
     behavior_script: Optional[str] = None  # Path to custom behavior .py file
     required: bool = False  # Required to kill to complete level
+    detection_range: float = 300.0  # Range for FLYING/CHASE AI to detect player
+    shoot_range: float = 200.0  # Range for SHOOTER AI to shoot
+    projectile_speed: float = 4.0  # Speed of projectiles for SHOOTER AI
+    fire_rate: int = 120  # Cooldown frames between shots for SHOOTER AI
+    projectile_damage: int = 1  # Damage dealt by projectiles for SHOOTER AI
 
     def to_dict(self):
         return {
@@ -123,7 +128,13 @@ class EnemyType:
             'damage': self.damage,
             'speed': self.speed,
             'color': self.color,
-            'behavior_script': self.behavior_script
+            'behavior_script': self.behavior_script,
+            'required': self.required,
+            'detection_range': self.detection_range,
+            'shoot_range': self.shoot_range,
+            'projectile_speed': self.projectile_speed,
+            'fire_rate': self.fire_rate,
+            'projectile_damage': self.projectile_damage
         }
 
 @dataclass
@@ -365,16 +376,20 @@ class TileEditor:
     def _create_placeholder_enemies(self):
         """Create starter enemy types"""
         # Skeleton - basic patrol enemy
-        self.add_enemy_type("Skeleton", None, EnemyAI.PATROL.value, 3, 1, 1.5, RED)
+        self.add_enemy_type("Skeleton", None, EnemyAI.PATROL.value, 3, 1, 1.5, RED,
+                          detection_range=150.0)
 
         # Ghost - flying chase enemy
-        self.add_enemy_type("Ghost", None, EnemyAI.FLYING.value, 2, 1, 2.0, PURPLE)
+        self.add_enemy_type("Ghost", None, EnemyAI.FLYING.value, 2, 1, 2.0, PURPLE,
+                          detection_range=300.0)
 
         # Spikes - stationary hazard
-        self.add_enemy_type("Spikes", None, EnemyAI.STATIONARY.value, 999, 2, 0, DARK_GRAY)
+        self.add_enemy_type("Spikes", None, EnemyAI.STATIONARY.value, 999, 2, 0, DARK_GRAY,
+                          detection_range=0.0)
 
         # Fire Turret - stationary shooter enemy
-        self.add_enemy_type("Fire Turret", None, EnemyAI.SHOOTER.value, 50, 10, 0, (255, 140, 0))
+        self.add_enemy_type("Fire Turret", None, EnemyAI.SHOOTER.value, 50, 10, 0, (255, 140, 0),
+                          shoot_range=200.0, projectile_speed=4.0, fire_rate=120, projectile_damage=1)
 
     def _create_placeholder_collectibles(self):
         """Create starter collectible types"""
@@ -412,7 +427,7 @@ class TileEditor:
         self.next_tile_id += 1
         return tile_type.id
 
-    def add_enemy_type(self, name: str, image_path: Optional[str], ai_type: str, health: int, damage: int, speed: float, color: Tuple[int, int, int], behavior_script: Optional[str] = None):
+    def add_enemy_type(self, name: str, image_path: Optional[str], ai_type: str, health: int, damage: int, speed: float, color: Tuple[int, int, int], behavior_script: Optional[str] = None, detection_range: float = 300.0, shoot_range: float = 200.0, projectile_speed: float = 4.0, fire_rate: int = 120, projectile_damage: int = 1):
         """Add a new enemy type"""
         image = None
         if image_path and os.path.exists(image_path):
@@ -432,7 +447,12 @@ class TileEditor:
             damage=damage,
             speed=speed,
             color=color,
-            behavior_script=behavior_script
+            behavior_script=behavior_script,
+            detection_range=detection_range,
+            shoot_range=shoot_range,
+            projectile_speed=projectile_speed,
+            fire_rate=fire_rate,
+            projectile_damage=projectile_damage
         )
         self.enemy_types[self.next_enemy_type_id] = enemy_type
         self.next_enemy_type_id += 1
@@ -511,6 +531,31 @@ class TileEditor:
                             r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
                             if 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255:
                                 enemy_type.color = (r, g, b)
+                    except:
+                        pass
+                elif self.input_field == 'detection_range':
+                    try:
+                        enemy_type.detection_range = max(0.0, float(self.input_text))
+                    except:
+                        pass
+                elif self.input_field == 'shoot_range':
+                    try:
+                        enemy_type.shoot_range = max(0.0, float(self.input_text))
+                    except:
+                        pass
+                elif self.input_field == 'projectile_speed':
+                    try:
+                        enemy_type.projectile_speed = max(0.0, float(self.input_text))
+                    except:
+                        pass
+                elif self.input_field == 'fire_rate':
+                    try:
+                        enemy_type.fire_rate = max(1, int(self.input_text))
+                    except:
+                        pass
+                elif self.input_field == 'projectile_damage':
+                    try:
+                        enemy_type.projectile_damage = max(0, int(self.input_text))
                     except:
                         pass
 
@@ -2346,7 +2391,7 @@ class TileEditor:
         editor_x = self.palette_rect.x + 20
         editor_y = self.palette_rect.y + 100
         editor_width = self.palette_width - 40
-        editor_height = 550
+        editor_height = 750  # Increased to accommodate new fields
 
         pygame.draw.rect(self.screen, WHITE, (editor_x, editor_y, editor_width, editor_height))
         pygame.draw.rect(self.screen, BLACK, (editor_x, editor_y, editor_width, editor_height), 2)
@@ -2419,6 +2464,64 @@ class TileEditor:
         color_text = self.small_font.render(color_display, True, BLACK)
         self.screen.blit(color_text, (color_field.x + 5, color_field.y + 5))
         y += 35
+
+        # Detection Range field (for FLYING, CHASE, PATROL AI)
+        if enemy_type.ai_type in [EnemyAI.FLYING.value, EnemyAI.CHASE.value, EnemyAI.PATROL.value]:
+            detection_label = self.small_font.render("Detection Range:", True, BLACK)
+            self.screen.blit(detection_label, (editor_x + 10, y))
+            y += 20
+            detection_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'detection_range') else YELLOW, detection_field)
+            pygame.draw.rect(self.screen, BLACK, detection_field, 1)
+            detection_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'detection_range') else str(enemy_type.detection_range), True, BLACK)
+            self.screen.blit(detection_text, (detection_field.x + 5, detection_field.y + 5))
+            y += 35
+
+        # Shooter-specific fields (only for SHOOTER AI)
+        if enemy_type.ai_type == EnemyAI.SHOOTER.value:
+            # Shoot Range
+            shoot_range_label = self.small_font.render("Shoot Range:", True, BLACK)
+            self.screen.blit(shoot_range_label, (editor_x + 10, y))
+            y += 20
+            shoot_range_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'shoot_range') else YELLOW, shoot_range_field)
+            pygame.draw.rect(self.screen, BLACK, shoot_range_field, 1)
+            shoot_range_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'shoot_range') else str(enemy_type.shoot_range), True, BLACK)
+            self.screen.blit(shoot_range_text, (shoot_range_field.x + 5, shoot_range_field.y + 5))
+            y += 35
+
+            # Projectile Speed
+            proj_speed_label = self.small_font.render("Projectile Speed:", True, BLACK)
+            self.screen.blit(proj_speed_label, (editor_x + 10, y))
+            y += 20
+            proj_speed_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'projectile_speed') else YELLOW, proj_speed_field)
+            pygame.draw.rect(self.screen, BLACK, proj_speed_field, 1)
+            proj_speed_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'projectile_speed') else str(enemy_type.projectile_speed), True, BLACK)
+            self.screen.blit(proj_speed_text, (proj_speed_field.x + 5, proj_speed_field.y + 5))
+            y += 35
+
+            # Fire Rate
+            fire_rate_label = self.small_font.render("Fire Rate (frames):", True, BLACK)
+            self.screen.blit(fire_rate_label, (editor_x + 10, y))
+            y += 20
+            fire_rate_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'fire_rate') else YELLOW, fire_rate_field)
+            pygame.draw.rect(self.screen, BLACK, fire_rate_field, 1)
+            fire_rate_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'fire_rate') else str(enemy_type.fire_rate), True, BLACK)
+            self.screen.blit(fire_rate_text, (fire_rate_field.x + 5, fire_rate_field.y + 5))
+            y += 35
+
+            # Projectile Damage
+            proj_dmg_label = self.small_font.render("Projectile Damage:", True, BLACK)
+            self.screen.blit(proj_dmg_label, (editor_x + 10, y))
+            y += 20
+            proj_dmg_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            pygame.draw.rect(self.screen, WHITE if not (self.input_active and self.input_field == 'projectile_damage') else YELLOW, proj_dmg_field)
+            pygame.draw.rect(self.screen, BLACK, proj_dmg_field, 1)
+            proj_dmg_text = self.small_font.render(self.input_text if (self.input_active and self.input_field == 'projectile_damage') else str(enemy_type.projectile_damage), True, BLACK)
+            self.screen.blit(proj_dmg_text, (proj_dmg_field.x + 5, proj_dmg_field.y + 5))
+            y += 35
 
         # AI Type buttons
         ai_label = self.font.render("AI Type:", True, BLACK)
@@ -2642,6 +2745,59 @@ class TileEditor:
             self.input_text = f"{enemy_type.color[0]},{enemy_type.color[1]},{enemy_type.color[2]}"
             return
         y += 35
+
+        # Detection Range field (for FLYING, CHASE, PATROL AI)
+        if enemy_type.ai_type in [EnemyAI.FLYING.value, EnemyAI.CHASE.value, EnemyAI.PATROL.value]:
+            y += 20
+            detection_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            if detection_field.collidepoint(pos):
+                self.input_active = True
+                self.input_field = 'detection_range'
+                self.input_text = str(enemy_type.detection_range)
+                return
+            y += 35
+
+        # Shooter-specific fields (only for SHOOTER AI)
+        if enemy_type.ai_type == EnemyAI.SHOOTER.value:
+            # Shoot Range
+            y += 20
+            shoot_range_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            if shoot_range_field.collidepoint(pos):
+                self.input_active = True
+                self.input_field = 'shoot_range'
+                self.input_text = str(enemy_type.shoot_range)
+                return
+            y += 35
+
+            # Projectile Speed
+            y += 20
+            proj_speed_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            if proj_speed_field.collidepoint(pos):
+                self.input_active = True
+                self.input_field = 'projectile_speed'
+                self.input_text = str(enemy_type.projectile_speed)
+                return
+            y += 35
+
+            # Fire Rate
+            y += 20
+            fire_rate_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            if fire_rate_field.collidepoint(pos):
+                self.input_active = True
+                self.input_field = 'fire_rate'
+                self.input_text = str(enemy_type.fire_rate)
+                return
+            y += 35
+
+            # Projectile Damage
+            y += 20
+            proj_dmg_field = pygame.Rect(editor_x + 10, y, editor_width - 20, 25)
+            if proj_dmg_field.collidepoint(pos):
+                self.input_active = True
+                self.input_field = 'projectile_damage'
+                self.input_text = str(enemy_type.projectile_damage)
+                return
+            y += 35
 
         # AI Type buttons
         y += 25
@@ -2941,7 +3097,12 @@ class TileEditor:
                     speed=etype_data['speed'],
                     color=tuple(etype_data['color']),
                     behavior_script=etype_data.get('behavior_script'),
-                    required=etype_data.get('required', False)
+                    required=etype_data.get('required', False),
+                    detection_range=etype_data.get('detection_range', 300.0),
+                    shoot_range=etype_data.get('shoot_range', 200.0),
+                    projectile_speed=etype_data.get('projectile_speed', 4.0),
+                    fire_rate=etype_data.get('fire_rate', 120),
+                    projectile_damage=etype_data.get('projectile_damage', 1)
                 )
                 self.next_enemy_type_id = max(self.next_enemy_type_id, eid + 1)
 
