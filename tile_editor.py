@@ -316,6 +316,8 @@ class TileEditor:
         self.show_collectible_editor = False
         self.enemy_ai_buttons = {}  # For AI type selection
         self.collectible_effect_buttons = {}  # For effect type selection
+        self.enemy_editor_scroll = 0  # Scroll offset for enemy editor
+        self.collectible_editor_scroll = 0  # Scroll offset for collectible editor
 
         # Font
         self.font = pygame.font.Font(None, 20)
@@ -703,16 +705,28 @@ class TileEditor:
                 elif event.button == 3:  # Right click
                     self.handle_right_click(event.pos)
                 elif event.button == 4:  # Scroll up
-                    if pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    if self.show_enemy_editor:
+                        # Scroll enemy editor up
+                        self.enemy_editor_scroll = max(0, self.enemy_editor_scroll - 30)
+                    elif self.show_collectible_editor:
+                        # Scroll collectible editor up
+                        self.collectible_editor_scroll = max(0, self.collectible_editor_scroll - 30)
+                    elif pygame.key.get_mods() & pygame.KMOD_CTRL:
                         # Pan left
                         self.camera_x = max(0, self.camera_x - 50)
                     elif self.palette_rect.collidepoint(event.pos):
                         # Scroll palette up
                         self.scroll_offset = max(0, self.scroll_offset - 30)
                 elif event.button == 5:  # Scroll down
-                    if pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    if self.show_enemy_editor:
+                        # Scroll enemy editor down
+                        self.enemy_editor_scroll += 30
+                    elif self.show_collectible_editor:
+                        # Scroll collectible editor down
+                        self.collectible_editor_scroll += 30
+                    elif pygame.key.get_mods() & pygame.KMOD_CTRL:
                         # Pan right
-                        self.camera_x = min(self.level_width * TILE_SIZE - self.canvas_rect.width, 
+                        self.camera_x = min(self.level_width * TILE_SIZE - self.canvas_rect.width,
                                           self.camera_x + 50)
                     elif self.palette_rect.collidepoint(event.pos):
                         # Scroll palette down
@@ -1079,8 +1093,12 @@ class TileEditor:
                 self.handle_enemy_editor_click(pos)
                 return
             else:
+                # Apply any pending edits before closing
+                if self.input_active:
+                    self.apply_input_text()
                 self.show_enemy_editor = False
                 self.editing_enemy_id = None
+                self.enemy_editor_scroll = 0
                 self.input_active = False
                 return
 
@@ -1230,6 +1248,7 @@ class TileEditor:
                 if edit_button.collidepoint(pos):
                     self.editing_enemy_id = enemy_id
                     self.show_enemy_editor = True
+                    self.enemy_editor_scroll = 0  # Reset scroll position
                     # Initialize AI buttons
                     self.enemy_ai_buttons = {ai.value: ai.value == enemy_type.ai_type for ai in EnemyAI}
                     return
@@ -2391,7 +2410,7 @@ class TileEditor:
         editor_x = self.palette_rect.x + 20
         editor_y = self.palette_rect.y + 100
         editor_width = self.palette_width - 40
-        editor_height = 750  # Increased to accommodate new fields
+        editor_height = 600  # Fixed height for the dialog box
 
         pygame.draw.rect(self.screen, WHITE, (editor_x, editor_y, editor_width, editor_height))
         pygame.draw.rect(self.screen, BLACK, (editor_x, editor_y, editor_width, editor_height), 2)
@@ -2407,7 +2426,14 @@ class TileEditor:
         close_text = self.small_font.render("Close", True, BLACK)
         self.screen.blit(close_text, (close_button.x + 8, close_button.y + 5))
 
-        y = editor_y + 45
+        # Set up clipping rect for scrollable content
+        content_y = editor_y + 45
+        content_height = editor_height - 50
+        clip_rect = pygame.Rect(editor_x, content_y, editor_width, content_height)
+        self.screen.set_clip(clip_rect)
+
+        # Start y position with scroll offset applied
+        y = content_y - self.enemy_editor_scroll
 
         # Name field
         name_label = self.small_font.render("Name:", True, BLACK)
@@ -2579,6 +2605,9 @@ class TileEditor:
         required_text = self.small_font.render("Required to kill to complete level", True, BLACK)
         self.screen.blit(required_text, (editor_x + 30, y))
 
+        # Reset clip rect
+        self.screen.set_clip(None)
+
     def draw_collectible_editor(self):
         """Draw the collectible editor dialog"""
         if self.editing_collectible_id is None:
@@ -2689,12 +2718,18 @@ class TileEditor:
         # Close button
         close_button = pygame.Rect(editor_x + editor_width - 60, editor_y + 10, 50, 25)
         if close_button.collidepoint(pos):
+            # Apply any pending edits before closing
+            if self.input_active:
+                self.apply_input_text()
             self.show_enemy_editor = False
             self.editing_enemy_id = None
+            self.enemy_editor_scroll = 0
             self.input_active = False
             return
 
-        y = editor_y + 45
+        # Start y position with scroll offset applied
+        content_y = editor_y + 45
+        y = content_y - self.enemy_editor_scroll
 
         # Name field
         y += 20
