@@ -61,6 +61,7 @@ class EnemyAI(Enum):
     PATROL = "patrol"
     CHASE = "chase"
     FLYING = "flying"
+    SHOOTER = "shooter"
 
 # Collectible Types
 class CollectibleEffect(Enum):
@@ -371,6 +372,9 @@ class TileEditor:
 
         # Spikes - stationary hazard
         self.add_enemy_type("Spikes", None, EnemyAI.STATIONARY.value, 999, 2, 0, DARK_GRAY)
+
+        # Fire Turret - stationary shooter enemy
+        self.add_enemy_type("Fire Turret", None, EnemyAI.SHOOTER.value, 50, 10, 0, (255, 140, 0))
 
     def _create_placeholder_collectibles(self):
         """Create starter collectible types"""
