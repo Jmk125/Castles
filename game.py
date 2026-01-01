@@ -393,9 +393,13 @@ class Player:
 
             # Only collide if falling and player's bottom was above platform top last frame
             # Skip collision if player pressed down+jump to intentionally fall through
-            if player_rect.colliderect(tile_rect) and self.vel_y > 0 and not self.fall_through_platform:
+            if self.vel_y > 0 and not self.fall_through_platform:
+                horizontal_overlap = (
+                    player_rect.right > tile_rect.left
+                    and player_rect.left < tile_rect.right
+                )
                 # Check if we crossed the platform top between frames
-                if previous_bottom <= tile_rect.top and player_rect.bottom >= tile_rect.top:
+                if horizontal_overlap and previous_bottom <= tile_rect.top and player_rect.bottom >= tile_rect.top:
                     self.y = tile_rect.top - self.height
                     self.vel_y = 0
                     self.on_ground = True
