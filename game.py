@@ -239,8 +239,9 @@ class Player:
         self.handle_horizontal_collisions(level)
         
         # Apply vertical movement
+        previous_y = self.y
         self.y += self.vel_y
-        self.handle_vertical_collisions(level)
+        self.handle_vertical_collisions(level, previous_y)
 
         # Enforce level boundaries
         self.handle_level_boundaries(level)
@@ -358,7 +359,7 @@ class Player:
                     self.x = tile_rect.right
                 self.vel_x = 0
     
-    def handle_vertical_collisions(self, level):
+    def handle_vertical_collisions(self, level, previous_y):
         """Handle collisions in the Y direction"""
         player_rect = self.get_rect()
         self.on_ground = False
@@ -386,14 +387,15 @@ class Player:
                     self.vel_y = 0
         
         # Check platform tiles (only from above)
+        previous_bottom = previous_y + self.height
         for (tile_x, tile_y), tile in level.get_platform_tiles():
             tile_rect = pygame.Rect(tile_x * TILE_SIZE, tile_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
 
             # Only collide if falling and player's bottom was above platform top last frame
             # Skip collision if player pressed down+jump to intentionally fall through
             if player_rect.colliderect(tile_rect) and self.vel_y > 0 and not self.fall_through_platform:
-                # Check if player's feet are within platform tolerance
-                if player_rect.bottom <= tile_rect.top + 8:
+                # Check if we crossed the platform top between frames
+                if previous_bottom <= tile_rect.top and player_rect.bottom >= tile_rect.top:
                     self.y = tile_rect.top - self.height
                     self.vel_y = 0
                     self.on_ground = True
