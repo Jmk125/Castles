@@ -150,6 +150,12 @@ class Player:
 
         # Animation
         self.facing_right = True
+        self.animation_frame = 0
+        self.animation_timer = 0
+        self.animation_speed = 6
+        self.sprite_frames = self.build_placeholder_sprites()
+        self.slash_frames = self.build_placeholder_slash()
+        self.slash_offsets = [(10, -6), (14, -2), (12, 2)]
         
     def get_rect(self) -> pygame.Rect:
         return pygame.Rect(int(self.x), int(self.y), self.width, self.height)
@@ -159,21 +165,24 @@ class Player:
         if not self.attacking:
             return pygame.Rect(0, 0, 0, 0)
 
+        attack_height = int(self.height * 0.6)
+        attack_y = int(self.y + (self.height - attack_height) * 0.4)
+
         if self.facing_right:
             # Attack in front of player
             return pygame.Rect(
                 int(self.x + self.width),
-                int(self.y),
+                attack_y,
                 self.attack_range,
-                self.height
+                attack_height
             )
         else:
             # Attack to the left
             return pygame.Rect(
                 int(self.x - self.attack_range),
-                int(self.y),
+                attack_y,
                 self.attack_range,
-                self.height
+                attack_height
             )
 
     def start_attack(self):
@@ -181,6 +190,8 @@ class Player:
         if self.attack_cooldown_timer <= 0 and not self.attacking:
             self.attacking = True
             self.attack_timer = self.attack_duration
+            self.animation_frame = 0
+            self.animation_timer = 0
 
     def update(self, keys, level):
         """Update player physics and movement"""
@@ -246,6 +257,91 @@ class Player:
 
         if self.attack_cooldown_timer > 0:
             self.attack_cooldown_timer -= 1
+
+        self.update_animation()
+
+    def update_animation(self):
+        if self.attacking:
+            attack_frame_count = len(self.sprite_frames["attack"])
+            if attack_frame_count:
+                progress = self.attack_duration - self.attack_timer
+                frame_index = min(
+                    int((progress / max(self.attack_duration, 1)) * attack_frame_count),
+                    attack_frame_count - 1,
+                )
+                self.animation_frame = frame_index
+            return
+
+        if abs(self.vel_x) > 0.1:
+            self.advance_animation("run")
+        else:
+            self.advance_animation("idle")
+
+    def advance_animation(self, state):
+        frame_count = len(self.sprite_frames[state])
+        if frame_count <= 1:
+            self.animation_frame = 0
+            return
+        self.animation_timer += 1
+        if self.animation_timer >= self.animation_speed:
+            self.animation_timer = 0
+            self.animation_frame = (self.animation_frame + 1) % frame_count
+
+    def build_placeholder_sprites(self):
+        base = {
+            "idle": [],
+            "run": [],
+            "attack": [],
+        }
+        for frame in range(2):
+            base["idle"].append(self.render_placeholder_frame("idle", frame))
+        for frame in range(4):
+            base["run"].append(self.render_placeholder_frame("run", frame))
+        for frame in range(3):
+            base["attack"].append(self.render_placeholder_frame("attack", frame))
+        return base
+
+    def render_placeholder_frame(self, state, frame):
+        surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        body_color = (35, 35, 55)
+        cape_color = (120, 25, 30)
+        hair_color = (220, 220, 235)
+        highlight = (200, 200, 255)
+
+        pygame.draw.rect(surface, body_color, pygame.Rect(4, 6, 6, 18), border_radius=2)
+        pygame.draw.rect(surface, body_color, pygame.Rect(2, 12, 10, 12), border_radius=2)
+
+        cape_offset = 0 if state != "run" else (1 if frame % 2 == 0 else -1)
+        cape_rect = pygame.Rect(0, 8 + cape_offset, 5, 18)
+        pygame.draw.rect(surface, cape_color, cape_rect, border_radius=2)
+
+        pygame.draw.rect(surface, hair_color, pygame.Rect(5, 2, 6, 6), border_radius=2)
+        pygame.draw.rect(surface, highlight, pygame.Rect(8, 4, 2, 2))
+
+        if state == "attack":
+            arm_shift = frame
+            pygame.draw.rect(surface, body_color, pygame.Rect(9, 10, 4 + arm_shift, 3), border_radius=1)
+
+        if state == "run":
+            stride = -1 if frame % 2 == 0 else 1
+            pygame.draw.rect(surface, body_color, pygame.Rect(4, 22, 3, 5 + stride))
+            pygame.draw.rect(surface, body_color, pygame.Rect(8, 22, 3, 5 - stride))
+        else:
+            pygame.draw.rect(surface, body_color, pygame.Rect(4, 22, 3, 5))
+            pygame.draw.rect(surface, body_color, pygame.Rect(8, 22, 3, 5))
+
+        return surface
+
+    def build_placeholder_slash(self):
+        slash_frames = []
+        colors = [(255, 220, 160, 200), (255, 210, 120, 180), (255, 200, 100, 150)]
+        sizes = [(24, 12), (28, 14), (26, 12)]
+        for (width, height), color in zip(sizes, colors):
+            surface = pygame.Surface((width, height), pygame.SRCALPHA)
+            pygame.draw.ellipse(surface, color, pygame.Rect(0, 0, width, height), 2)
+            pygame.draw.line(surface, (255, 255, 255, 180), (2, height // 2), (width - 2, height // 2), 2)
+            slash_frames.append(surface)
+        return slash_frames
 
     def handle_horizontal_collisions(self, level):
         """Handle collisions in the X direction"""
@@ -336,30 +432,25 @@ class Player:
         draw_x = int(self.x - camera_x)
         draw_y = int(self.y - camera_y)
 
-        # Draw simple rectangle for now (can be replaced with sprite later)
-        pygame.draw.rect(screen, RED, (draw_x, draw_y, self.width, self.height))
-
-        # Draw direction indicator
-        if self.facing_right:
-            pygame.draw.rect(screen, WHITE, (draw_x + self.width - 3, draw_y + 5, 3, 3))
-        else:
-            pygame.draw.rect(screen, WHITE, (draw_x, draw_y + 5, 3, 3))
+        state = "attack" if self.attacking else ("run" if abs(self.vel_x) > 0.1 else "idle")
+        frames = self.sprite_frames[state]
+        frame_index = min(self.animation_frame, len(frames) - 1)
+        sprite = frames[frame_index]
+        if not self.facing_right:
+            sprite = pygame.transform.flip(sprite, True, False)
+        screen.blit(sprite, (draw_x, draw_y))
 
         # Draw sword swing if attacking
         if self.attacking:
-            attack_rect = self.get_attack_rect()
-            sword_draw_x = int(attack_rect.x - camera_x)
-            sword_draw_y = int(attack_rect.y - camera_y)
-
-            # Draw sword as a semi-transparent yellow rectangle
-            sword_surface = pygame.Surface((attack_rect.width, attack_rect.height))
-            sword_surface.set_alpha(150)
-            sword_surface.fill((255, 255, 100))  # Yellow
-            screen.blit(sword_surface, (sword_draw_x, sword_draw_y))
-
-            # Draw sword outline
-            pygame.draw.rect(screen, (255, 255, 0),
-                           (sword_draw_x, sword_draw_y, attack_rect.width, attack_rect.height), 2)
+            slash_frame = min(self.animation_frame, len(self.slash_frames) - 1)
+            slash_surface = self.slash_frames[slash_frame]
+            offset_x, offset_y = self.slash_offsets[slash_frame]
+            slash_x = draw_x + offset_x
+            if not self.facing_right:
+                slash_surface = pygame.transform.flip(slash_surface, True, False)
+                slash_x = draw_x + self.width - offset_x - slash_surface.get_width()
+            slash_y = draw_y + offset_y
+            screen.blit(slash_surface, (slash_x, slash_y))
 
 class Enemy:
     def __init__(self, x: int, y: int, enemy_type: EnemyType, patrol_range: int = 100):
@@ -1608,7 +1699,8 @@ class Game:
         # Controls hint
         controls = [
             "Arrow Keys/WASD: Move",
-            "Space/Up: Jump",
+            "Up: Jump",
+            "Space: Attack",
             "R: Restart Level",
             "N: Next Level",
             "ESC: Quit"
