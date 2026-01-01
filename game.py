@@ -304,43 +304,106 @@ class Player:
 
     def render_placeholder_frame(self, state, frame):
         surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        body_color = (35, 35, 55)
-        cape_color = (120, 25, 30)
-        hair_color = (220, 220, 235)
-        highlight = (200, 200, 255)
 
-        pygame.draw.rect(surface, body_color, pygame.Rect(4, 6, 6, 18), border_radius=2)
-        pygame.draw.rect(surface, body_color, pygame.Rect(2, 12, 10, 12), border_radius=2)
+        # Enhanced color palette
+        armor_main = (60, 65, 80)      # Darker steel blue
+        armor_dark = (40, 45, 55)      # Shadow
+        armor_light = (90, 95, 115)    # Highlight
+        cape_main = (140, 30, 35)      # Rich red
+        cape_dark = (90, 20, 25)       # Shadow
+        hair_color = (200, 180, 140)   # Blonde/brown
+        skin_color = (220, 190, 170)   # Skin tone
+        gold_color = (255, 200, 60)    # Gold trim
 
+        # Cape with depth (drawn first, behind character)
         cape_offset = 0 if state != "run" else (1 if frame % 2 == 0 else -1)
-        cape_rect = pygame.Rect(0, 8 + cape_offset, 5, 18)
-        pygame.draw.rect(surface, cape_color, cape_rect, border_radius=2)
+        # Cape shadow
+        pygame.draw.rect(surface, cape_dark, pygame.Rect(1, 9 + cape_offset, 4, 17), border_radius=2)
+        # Cape main
+        pygame.draw.rect(surface, cape_main, pygame.Rect(0, 8 + cape_offset, 4, 17), border_radius=2)
 
-        pygame.draw.rect(surface, hair_color, pygame.Rect(5, 2, 6, 6), border_radius=2)
-        pygame.draw.rect(surface, highlight, pygame.Rect(8, 4, 2, 2))
+        # Body/torso with armor
+        # Torso shadow
+        pygame.draw.rect(surface, armor_dark, pygame.Rect(3, 13, 9, 11), border_radius=2)
+        # Torso main
+        pygame.draw.rect(surface, armor_main, pygame.Rect(2, 12, 9, 11), border_radius=2)
+        # Armor highlight
+        pygame.draw.rect(surface, armor_light, pygame.Rect(3, 13, 2, 8))
+        # Gold belt
+        pygame.draw.rect(surface, gold_color, pygame.Rect(2, 18, 9, 2))
 
-        if state == "attack":
-            arm_shift = frame
-            pygame.draw.rect(surface, body_color, pygame.Rect(9, 10, 4 + arm_shift, 3), border_radius=1)
-
+        # Legs
         if state == "run":
             stride = -1 if frame % 2 == 0 else 1
-            pygame.draw.rect(surface, body_color, pygame.Rect(4, 22, 3, 5 + stride))
-            pygame.draw.rect(surface, body_color, pygame.Rect(8, 22, 3, 5 - stride))
+            # Left leg
+            pygame.draw.rect(surface, armor_dark, pygame.Rect(4, 23, 3, 5 + stride))
+            pygame.draw.rect(surface, armor_main, pygame.Rect(4, 22, 3, 5 + stride))
+            # Right leg
+            pygame.draw.rect(surface, armor_dark, pygame.Rect(8, 23, 3, 5 - stride))
+            pygame.draw.rect(surface, armor_main, pygame.Rect(8, 22, 3, 5 - stride))
         else:
-            pygame.draw.rect(surface, body_color, pygame.Rect(4, 22, 3, 5))
-            pygame.draw.rect(surface, body_color, pygame.Rect(8, 22, 3, 5))
+            # Left leg
+            pygame.draw.rect(surface, armor_dark, pygame.Rect(4, 23, 3, 5))
+            pygame.draw.rect(surface, armor_main, pygame.Rect(4, 22, 3, 5))
+            # Right leg
+            pygame.draw.rect(surface, armor_dark, pygame.Rect(8, 23, 3, 5))
+            pygame.draw.rect(surface, armor_main, pygame.Rect(8, 22, 3, 5))
+
+        # Shoulders/neck
+        pygame.draw.rect(surface, armor_dark, pygame.Rect(4, 10, 6, 3), border_radius=1)
+        pygame.draw.rect(surface, armor_light, pygame.Rect(4, 10, 2, 2))
+
+        # Head
+        # Head shadow
+        pygame.draw.ellipse(surface, (180, 160, 130), pygame.Rect(5, 3, 6, 7))
+        # Head main
+        pygame.draw.ellipse(surface, skin_color, pygame.Rect(5, 2, 6, 7))
+
+        # Hair
+        pygame.draw.rect(surface, hair_color, pygame.Rect(5, 2, 6, 4), border_radius=2)
+        pygame.draw.rect(surface, (180, 160, 120), pygame.Rect(5, 3, 6, 3), border_radius=2)
+
+        # Face details
+        # Eyes
+        pygame.draw.rect(surface, (40, 40, 50), pygame.Rect(6, 5, 1, 1))
+        pygame.draw.rect(surface, (40, 40, 50), pygame.Rect(9, 5, 1, 1))
+
+        # Attack arm with sword
+        if state == "attack":
+            arm_shift = frame
+            # Arm shadow
+            pygame.draw.rect(surface, armor_dark, pygame.Rect(10, 11, 4 + arm_shift, 3), border_radius=1)
+            # Arm main
+            pygame.draw.rect(surface, armor_main, pygame.Rect(9, 10, 4 + arm_shift, 3), border_radius=1)
+            # Arm highlight
+            pygame.draw.rect(surface, armor_light, pygame.Rect(9, 10, 2, 1))
 
         return surface
 
     def build_placeholder_slash(self):
         slash_frames = []
-        colors = [(255, 220, 160, 200), (255, 210, 120, 180), (255, 200, 100, 150)]
         sizes = [(24, 12), (28, 14), (26, 12)]
-        for (width, height), color in zip(sizes, colors):
+        alphas = [220, 180, 140]
+
+        for (width, height), alpha in zip(sizes, alphas):
             surface = pygame.Surface((width, height), pygame.SRCALPHA)
-            pygame.draw.ellipse(surface, color, pygame.Rect(0, 0, width, height), 2)
-            pygame.draw.line(surface, (255, 255, 255, 180), (2, height // 2), (width - 2, height // 2), 2)
+
+            # Create an arc/slash effect with multiple lines for depth
+            blade_color = (220, 235, 255, alpha)  # Silver/white blade
+            edge_color = (255, 255, 255, alpha)   # Bright edge
+
+            # Draw slash arc with multiple lines for thickness
+            y_center = height // 2
+            # Main blade
+            pygame.draw.line(surface, blade_color, (2, y_center), (width - 2, y_center), 3)
+            # Bright edge highlight
+            pygame.draw.line(surface, edge_color, (2, y_center), (width - 2, y_center), 1)
+
+            # Add motion blur effect with curved lines
+            if width > 24:
+                pygame.draw.line(surface, (200, 220, 255, alpha // 2), (4, y_center - 2), (width - 4, y_center + 1), 2)
+                pygame.draw.line(surface, (200, 220, 255, alpha // 2), (4, y_center + 2), (width - 4, y_center - 1), 2)
+
             slash_frames.append(surface)
         return slash_frames
 
