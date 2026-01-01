@@ -388,18 +388,25 @@ class Player:
         
         # Check platform tiles (only from above)
         previous_bottom = previous_y + self.height
+        platform_tolerance = 2  # Small tolerance for floating point precision
+
         for (tile_x, tile_y), tile in level.get_platform_tiles():
             tile_rect = pygame.Rect(tile_x * TILE_SIZE, tile_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
 
-            # Only collide if falling and player's bottom was above platform top last frame
+            # Only collide if falling and not intentionally falling through
             # Skip collision if player pressed down+jump to intentionally fall through
             if self.vel_y > 0 and not self.fall_through_platform:
                 horizontal_overlap = (
                     player_rect.right > tile_rect.left
                     and player_rect.left < tile_rect.right
                 )
-                # Check if we crossed the platform top between frames
-                if horizontal_overlap and previous_bottom <= tile_rect.top and player_rect.bottom >= tile_rect.top:
+
+                # Check if we crossed the platform top between frames or are standing on it
+                # Use tolerance to handle floating point precision issues
+                player_approaching_from_above = previous_bottom <= tile_rect.top + platform_tolerance
+                player_at_or_below_platform = player_rect.bottom >= tile_rect.top - platform_tolerance
+
+                if horizontal_overlap and player_approaching_from_above and player_at_or_below_platform:
                     self.y = tile_rect.top - self.height
                     self.vel_y = 0
                     self.on_ground = True
